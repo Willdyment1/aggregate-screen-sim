@@ -251,8 +251,18 @@ export function PlantViewer({ plant, result, onChange, onEdit }: { plant: Plant;
                             </select>
                           </label>
                           <label>{spec.settingLabel} ({spec.settingUnit})
-                            <NumberField min={1} step="any" value={cu.css} list={`pvcss-${cu.id}`} onChange={(v) => patchUnit(cu.id, { css: v })} />
-                            <datalist id={`pvcss-${cu.id}`}>{spec.settings.map((s) => (<option key={s} value={s} />))}</datalist>
+                            {(cu.crusherType ?? 'cone') === 'vsi' ? (
+                              <select value={cu.css} onChange={(e) => patchUnit(cu.id, { css: +e.target.value })}>
+                                {(spec.settings.includes(cu.css) ? spec.settings : [...spec.settings, cu.css].sort((a, b) => a - b)).map((s) => (
+                                  <option key={s} value={s}>{s} {spec.settingUnit}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <>
+                                <NumberField min={1} step="any" value={cu.css} list={`pvcss-${cu.id}`} onChange={(v) => patchUnit(cu.id, { css: v })} />
+                                <datalist id={`pvcss-${cu.id}`}>{spec.settings.map((s) => (<option key={s} value={s} />))}</datalist>
+                              </>
+                            )}
                           </label>
                           <label>Capacity (tph)<NumberField min={0} value={cu.capacity} onChange={(v) => patchUnit(cu.id, { capacity: v })} /></label>
                         </div>

@@ -240,8 +240,18 @@ export function CrusherCard({ plant, u, node, onChange, showRoute = true }: { pl
         </label>
         <label>
           {spec.settingLabel} ({spec.settingUnit})
-          <NumberField value={u.css} min={1} step="any" list={`css-${u.id}`} onChange={(v) => onChange(setUnit(plant, u.id, { css: v }))} />
-          <datalist id={`css-${u.id}`}>{spec.settings.map((s) => (<option key={s} value={s} />))}</datalist>
+          {type === 'vsi' ? (
+            <select value={u.css} onChange={(e) => onChange(setUnit(plant, u.id, { css: +e.target.value }))}>
+              {(spec.settings.includes(u.css) ? spec.settings : [...spec.settings, u.css].sort((a, b) => a - b)).map((s) => (
+                <option key={s} value={s}>{s} {spec.settingUnit}</option>
+              ))}
+            </select>
+          ) : (
+            <>
+              <NumberField value={u.css} min={1} step="any" list={`css-${u.id}`} onChange={(v) => onChange(setUnit(plant, u.id, { css: v }))} />
+              <datalist id={`css-${u.id}`}>{spec.settings.map((s) => (<option key={s} value={s} />))}</datalist>
+            </>
+          )}
         </label>
         <label>Capacity (tph)<NumberField value={u.capacity} min={0} step={10} onChange={(v) => onChange(setUnit(plant, u.id, { capacity: v }))} /></label>
       </div>
