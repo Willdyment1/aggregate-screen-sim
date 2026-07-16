@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import type { OpeningShape } from '../model/types';
 import type { Plant, PlantFeed, PlantScreen, PlantCrusher, Target, Split, CrusherType } from '../model/plant';
 import { PILE, targetOptions } from '../model/plant';
-import { setUnit, setDeck, addDeck, removeDeck, removeUnit } from '../model/plantOps';
+import { setUnit, setDeck, addDeck, removeDeck, removeUnit, duplicateUnit } from '../model/plantOps';
 import type { PlantNode } from '../engine/plant';
 import { sieveLabel } from '../model/sieves';
 import { CRUSHER_SPECS, CRUSHER_TYPE_LIST } from '../engine/crusher';
@@ -119,6 +119,7 @@ export function FeedCard({ plant, u, onChange, showRoute = true }: { plant: Plan
         <span className="unit-kind">Feed</span>
         <input className="unit-name" value={u.name} onChange={(e) => onChange(setUnit(plant, u.id, { name: e.target.value }))} />
         <span className="plant-input">{round(u.tph)} tph</span>
+        <button className="link-btn unit-dup" onClick={() => onChange(duplicateUnit(plant, u.id).plant)} title="Duplicate" aria-label="duplicate feed">⧉</button>
         {canRemove && <button className="link-btn" onClick={() => onChange(removeUnit(plant, u.id))} aria-label="remove feed">✕</button>}
       </div>
       <div className="field-grid">
@@ -155,6 +156,7 @@ export function ScreenCard({ plant, u, node, onChange, showRoute = true }: { pla
         <span className="unit-kind">Screen</span>
         <input className="unit-name" value={u.name} onChange={(e) => onChange(setUnit(plant, u.id, { name: e.target.value, auto: false }))} />
         <span className={`badge ${ok ? 'ok' : 'over'}`}>{ok ? 'OK' : 'OVERLOADED'}</span>
+        <button className="link-btn unit-dup" onClick={() => onChange(duplicateUnit(plant, u.id).plant)} title="Duplicate" aria-label="duplicate screen">⧉</button>
         <button className="link-btn" onClick={() => onChange(removeUnit(plant, u.id))} aria-label="remove screen">✕</button>
       </div>
       <div className="plant-input">Input: {round(node?.kind === 'screen' ? node.input.tph : 0)} tph</div>
@@ -225,6 +227,7 @@ export function CrusherCard({ plant, u, node, onChange, showRoute = true }: { pl
         <span className="unit-kind">Crusher</span>
         <input className="unit-name" value={u.name} onChange={(e) => onChange(setUnit(plant, u.id, { name: e.target.value, auto: false }))} />
         <span className={`badge ${over ? 'over' : 'ok'}`}>{over ? 'OVER CAP' : 'OK'}</span>
+        <button className="link-btn unit-dup" onClick={() => onChange(duplicateUnit(plant, u.id).plant)} title="Duplicate" aria-label="duplicate crusher">⧉</button>
         <button className="link-btn" onClick={() => onChange(removeUnit(plant, u.id))} aria-label="remove crusher">✕</button>
       </div>
       <div className="plant-input">Crushes {round(cr?.input.tph ?? 0)} tph · reduction {(cr?.reductionRatio ?? 0).toFixed(1)}:1</div>

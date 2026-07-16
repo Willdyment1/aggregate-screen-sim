@@ -82,6 +82,26 @@ export function addFeed(plant: Plant, pos?: { x: number; y: number }): { plant: 
   return { plant: normalizeNames({ ...plant, units: [...plant.units, nf], layout }), id: nf.id };
 }
 
+/** Duplicate a unit: a copy with a new id, its outputs reset to a product pile,
+ *  named "<name> copy", inserted right after the original (offset on the flowsheet). */
+export function duplicateUnit(plant: Plant, id: string): { plant: Plant; id: string } {
+  const u = plant.units.find((x) => x.id === id);
+  if (!u) return { plant, id };
+  const newId = uid();
+  const name = `${u.name} copy`;
+  let copy: PlantUnit;
+  if (u.kind === 'feed') copy = { ...u, id: newId, name, out: one(PILE) };
+  else if (u.kind === 'screen') copy = { ...u, id: newId, name, auto: false, decks: u.decks.map((d) => ({ ...d })), deckTargets: u.decks.map(() => one(PILE)), underTarget: one(PILE) };
+  else copy = { ...u, id: newId, name, auto: false, out: one(PILE) };
+
+  const layout = { ...(plant.layout ?? {}) };
+  if (layout[id]) layout[newId] = { x: layout[id].x + 40, y: layout[id].y + 40 };
+
+  const idx = plant.units.findIndex((x) => x.id === id);
+  const units = [...plant.units.slice(0, idx + 1), copy, ...plant.units.slice(idx + 1)];
+  return { plant: normalizeNames({ ...plant, units, layout }), id: newId };
+}
+
 export function removeUnit(plant: Plant, id: string): Plant {
   const target = plant.units.find((u) => u.id === id);
   // A plant always needs at least one feed.

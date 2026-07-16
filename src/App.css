@@ -1846,6 +1846,14 @@
   flex: 1;
   min-width: 0;
 }
+.unit-dup {
+  color: var(--muted);
+  font-size: 1.05em;
+  line-height: 1;
+}
+.unit-dup:hover {
+  color: var(--accent);
+}
 .unit-name:hover,
 .unit-name:focus {
   border-color: var(--line);

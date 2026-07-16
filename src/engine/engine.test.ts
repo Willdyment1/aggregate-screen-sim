@@ -13,6 +13,7 @@ import { plantMaxFeed } from './plantMaxFeed';
 import { PILE, one, type Plant } from '../model/plant';
 import { parseSize } from '../ui/SieveSelect';
 import { plantToProject } from './plantToProject';
+import { duplicateUnit } from '../model/plantOps';
 import { CRUSHER_SETTINGS, crusherProduct } from './crusher';
 import { defaultProject } from '../defaults';
 import type { Gradation, Project } from '../model/types';
@@ -497,6 +498,27 @@ describe('routed plant graph (branching + recycle loops)', () => {
       expect(r.iterations).toBeLessThanOrEqual(1000); // never hangs
       if (!r.runaway) expect(r.piles.reduce((s, p) => s + p.stream.tph, 0)).toBeCloseTo(300, 0);
     }
+  });
+
+  it('duplicateUnit copies a unit with a new id, "copy" name, reset outputs, inserted after', () => {
+    const p: Plant = {
+      realistic: false,
+      units: [
+        { id: 'f', kind: 'feed', name: 'Feed', tph: 300, gradation: feedGrad, bulkDensity: 100, wet: false, out: one('s') },
+        { id: 's', kind: 'screen', name: 'Screen A', width: 8, length: 20, travelRate: 75, targetEfficiency: 90, decks: [{ aperture: 19, openAreaPct: 60, openingShape: 'square' }], deckTargets: [one('c')], underTarget: one(PILE) },
+        { id: 'c', kind: 'crusher', crusherType: 'cone', name: 'Cone', css: 13, capacity: 400, out: one('s') },
+      ],
+    };
+    const { plant: p2, id } = duplicateUnit(p, 's');
+    expect(p2.units).toHaveLength(4);
+    const copy = p2.units.find((u) => u.id === id)!;
+    expect(copy.id).not.toBe('s');
+    expect(copy.name).toContain('copy');
+    expect(copy.kind === 'screen' && copy.deckTargets[0][0].to).toBe(PILE); // outputs reset to a pile
+    expect(copy.kind === 'screen' && copy.underTarget[0].to).toBe(PILE);
+    expect(p2.units[2].id).toBe(id); // inserted right after the original
+    // the copy is a standalone screen; simulating still conserves mass
+    expect(simulatePlant(p2).runaway).toBe(false);
   });
 
   describe('plant max feed / bottleneck', () => {
