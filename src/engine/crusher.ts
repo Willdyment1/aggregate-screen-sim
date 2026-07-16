@@ -94,9 +94,12 @@ export const CRUSHER_SETTINGS = CRUSHER_SPECS.cone.settings;
  *  bigger R = finer product. Approximation until a real Barmac curve is digitized. */
 function vsiProduct(speed: number, feed: Gradation): Gradation {
   const R = vsiReduction(speed);
-  // Shift each particle finer by R (product size = feed size ÷ R) while keeping
-  // the feed's shape — so the product curve has the same tidy set of points.
-  return feed.filter((p) => p.size > 0).map((p) => ({ size: p.size / R, percentPassing: p.percentPassing }));
+  // A VSI makes fines but barely reduces the top size (reduction ~1–1.5), so we
+  // shift the curve finer by keeping the SAME size points and raising %passing
+  // (product %passing at x = feed %passing at x·R). Keeping the feed's sizes — not
+  // size÷R — is essential: in a recycle loop, size÷R invents ever-finer new sizes
+  // every pass, blowing up the gradation's point count and hanging the browser.
+  return feed.filter((p) => p.size > 0).map((p) => ({ size: p.size, percentPassing: percentPassing(feed, p.size * R) }));
 }
 
 export function crusherProduct(css: number, crusherFeed: Gradation, type: CrusherType = 'cone'): Gradation {
