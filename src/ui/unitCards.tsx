@@ -236,7 +236,7 @@ export function CrusherCard({ plant, u, node, onChange, showRoute = true }: { pl
           </select>
         </label>
         <label>
-          {spec.settingLabel} (mm)
+          {spec.settingLabel} ({spec.settingUnit})
           <NumberField value={u.css} min={1} step="any" list={`css-${u.id}`} onChange={(v) => onChange(setUnit(plant, u.id, { css: v }))} />
           <datalist id={`css-${u.id}`}>{spec.settings.map((s) => (<option key={s} value={s} />))}</datalist>
         </label>

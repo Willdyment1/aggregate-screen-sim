@@ -587,6 +587,17 @@ describe('crusher types', () => {
   it('defaults to the cone curve when no type is given', () => {
     expect(crusherProduct(css, feed)).toEqual(crusherProduct(css, feed, 'cone'));
   });
+
+  it('VSI is speed-driven: faster rotor makes a finer product, mildly reducing top size', () => {
+    const slow = crusherProduct(45, feed, 'vsi'); // low speed → ~no reduction
+    const fast = crusherProduct(75, feed, 'vsi'); // high speed → more fines
+    const p80 = (g: ReturnType<typeof crusherProduct>) => sizeAtPassing(g, 80);
+    expect(p80(fast)).toBeLessThan(p80(slow)); // faster → finer
+    // fast keeps most of the top size (reduction only ~1.5), not a big drop
+    const top = (g: ReturnType<typeof crusherProduct>) => Math.max(...g.map((x) => x.size));
+    expect(top(fast)).toBeGreaterThan(top(slow) / 2);
+    expect(fast.every((x) => Number.isFinite(x.percentPassing))).toBe(true);
+  });
 });
 
 describe('max feed finder', () => {

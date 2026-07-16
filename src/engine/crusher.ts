@@ -41,7 +41,9 @@ export interface CrusherSpec {
   label: string;
   /** What the setting is called for this machine. */
   settingLabel: string;
-  /** Selectable settings, mm. */
+  /** Unit of the setting ('mm' size gap, or 'm/s' rotor speed for a VSI). */
+  settingUnit: string;
+  /** Selectable settings (mm, or m/s for a VSI). */
   settings: number[];
   defaultSetting: number;
   defaultCapacity: number;
@@ -49,19 +51,34 @@ export interface CrusherSpec {
   reduction: readonly [number, number];
   /** Largest feed the machine accepts, mm (Metso "Crusher selection" table). */
   maxFeed: number;
-  norm: Norm;
+  /** Normalized product curve [size/setting, %passing] — a size-gap crusher. VSI has none (speed-driven). */
+  norm?: Norm;
 }
 
 /** Per-type crusher data (settings, capacity, reduction, product curve). */
 export const CRUSHER_SPECS: Record<CrusherType, CrusherSpec> = {
-  jaw: { type: 'jaw', label: 'Jaw', settingLabel: 'CSS', settings: [40, 50, 63, 75, 90, 100, 125, 150, 175, 200, 250], defaultSetting: 100, defaultCapacity: 400, reduction: [3, 5], maxFeed: 1400, norm: JAW_NORM },
-  gyratory: { type: 'gyratory', label: 'Gyratory', settingLabel: 'OSS', settings: [100, 125, 150, 175, 200, 225, 250, 300], defaultSetting: 150, defaultCapacity: 1000, reduction: [6, 8], maxFeed: 1500, norm: JAW_NORM },
-  cone: { type: 'cone', label: 'Cone', settingLabel: 'CSS', settings: [6, 8, 10, 13, 16, 19, 22, 25, 32, 38, 51], defaultSetting: 13, defaultCapacity: 200, reduction: [3, 4], maxFeed: 450, norm: CONE_NORM },
-  hsi: { type: 'hsi', label: 'HSI', settingLabel: 'Apron', settings: [15, 20, 25, 30, 40, 50, 60, 80, 100, 150, 200], defaultSetting: 40, defaultCapacity: 500, reduction: [5, 10], maxFeed: 1500, norm: HSI_NORM },
+  jaw: { type: 'jaw', label: 'Jaw', settingLabel: 'CSS', settingUnit: 'mm', settings: [40, 50, 63, 75, 90, 100, 125, 150, 175, 200, 250], defaultSetting: 100, defaultCapacity: 400, reduction: [3, 5], maxFeed: 1400, norm: JAW_NORM },
+  gyratory: { type: 'gyratory', label: 'Gyratory', settingLabel: 'OSS', settingUnit: 'mm', settings: [100, 125, 150, 175, 200, 225, 250, 300], defaultSetting: 150, defaultCapacity: 1000, reduction: [6, 8], maxFeed: 1500, norm: JAW_NORM },
+  cone: { type: 'cone', label: 'Cone', settingLabel: 'CSS', settingUnit: 'mm', settings: [6, 8, 10, 13, 16, 19, 22, 25, 32, 38, 51], defaultSetting: 13, defaultCapacity: 200, reduction: [3, 4], maxFeed: 450, norm: CONE_NORM },
+  hsi: { type: 'hsi', label: 'HSI', settingLabel: 'Apron', settingUnit: 'mm', settings: [15, 20, 25, 30, 40, 50, 60, 80, 100, 150, 200], defaultSetting: 40, defaultCapacity: 500, reduction: [5, 10], maxFeed: 1500, norm: HSI_NORM },
+  // Vertical-shaft impactor: no size gap — controlled by ROTOR TIP SPEED (m/s).
+  // Higher speed = more reduction + more fines (Metso Barmac: 45 m/s = lowest
+  // crushing/high capacity, 75 m/s = highest crushing). Reduction only ~1–1.5,
+  // so it barely drops the top size but generates fines / manufactured sand.
+  vsi: { type: 'vsi', label: 'VSI', settingLabel: 'Rotor speed', settingUnit: 'm/s', settings: [45, 50, 55, 60, 65, 70, 75], defaultSetting: 60, defaultCapacity: 300, reduction: [1, 1.5], maxFeed: 150 },
 };
 
 /** Order for the crusher-type dropdown (feed-coarse → feed-fine). */
-export const CRUSHER_TYPE_LIST: CrusherType[] = ['jaw', 'gyratory', 'cone', 'hsi'];
+export const CRUSHER_TYPE_LIST: CrusherType[] = ['jaw', 'gyratory', 'cone', 'hsi', 'vsi'];
+
+/** VSI: map rotor tip speed (m/s) to a size-reduction factor R (≈1.05 at 45 → 1.5 at 75). */
+const vsiReduction = (speed: number): number => 1.05 + Math.min(1, Math.max(0, (speed - 45) / (75 - 45))) * (1.5 - 1.05);
+
+/** Reduction ratio a crusher achieves: a size gap divides the feed top; a VSI is speed-driven. */
+export function crusherReduction(type: CrusherType, setting: number, feedTop: number): number {
+  if (type === 'vsi') return vsiReduction(setting);
+  return setting > 0 ? feedTop / setting : 0;
+}
 
 /** Legacy export (cone settings) still used by the single-screen tools. */
 export const CRUSHER_SETTINGS = CRUSHER_SPECS.cone.settings;
@@ -72,8 +89,19 @@ export const CRUSHER_SETTINGS = CRUSHER_SPECS.cone.settings;
  * reduction at ~1:1 ratio) to 1 (full rated curve at ≥2:1). Product is never
  * coarser than the feed (crushing only reduces).
  */
+/** VSI product: the feed shifted finer by the speed-driven reduction factor R
+ *  (each particle size ÷ R → more fines, top size barely drops). Faster rotor =
+ *  bigger R = finer product. Approximation until a real Barmac curve is digitized. */
+function vsiProduct(speed: number, feed: Gradation): Gradation {
+  const R = vsiReduction(speed);
+  // Shift each particle finer by R (product size = feed size ÷ R) while keeping
+  // the feed's shape — so the product curve has the same tidy set of points.
+  return feed.filter((p) => p.size > 0).map((p) => ({ size: p.size / R, percentPassing: p.percentPassing }));
+}
+
 export function crusherProduct(css: number, crusherFeed: Gradation, type: CrusherType = 'cone'): Gradation {
-  const NORM = (CRUSHER_SPECS[type] ?? CRUSHER_SPECS.cone).norm;
+  if (type === 'vsi') return vsiProduct(css, crusherFeed);
+  const NORM = (CRUSHER_SPECS[type] ?? CRUSHER_SPECS.cone).norm ?? CONE_NORM;
   const c = css > 0 ? css : 25;
   const feedTop = crusherFeed.length ? Math.max(...crusherFeed.map((p) => p.size)) : c * 2;
   const rr = feedTop / c; // reduction ratio

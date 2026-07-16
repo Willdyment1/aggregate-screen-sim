@@ -1,99 +1,73 @@
 # Aggregate Screening Simulator
 
-A web app that sizes and simulates a multi-deck vibrating screen for aggregate
-processing using the **VSMA (Vibrating Screen Manufacturers Association) factor
-method**.
+A browser-based engineering tool that **sizes and simulates a whole aggregate crushing‑and‑screening plant** using the **VSMA (Vibrating Screen Manufacturers Association) 9‑factor method**. Build a circuit of feeds, screens and crushers, wire it up (branching and recycle loops included), and see live product gradations, deck loading, throughput bottlenecks, and a printable datasheet.
 
-- **Units:** material sizes in **mm**; feed rate STPH (short tons/hr); screen
-  width/length in ft; bulk density lb/ft³. (VSMA tables are inch-keyed; sizes are
-  converted mm→in only inside those lookups.)
-- **Scope:** one screen, **1–4 decks** (add/remove). Design efficiency default 90%.
-- Sizes each deck (required area vs. actual → utilization) **and** simulates the
-  product streams (tonnage + gradation).
-- **Closed circuit:** optionally the top deck makes no product — its oversize is
-  crushed (Gaudin–Schuhmann product model, adjustable `n`) and recirculated into
-  the feed; the sim solves the steady-state recirculating load.
+Everything runs client‑side — no backend — and your work auto‑saves to the browser.
 
-## Run
+## What it does
+
+- **Multi‑unit plant builder** — start from a feed and add screens and crushers. Route every output anywhere: a deck's oversize to a crusher, a crusher back to a screen (a closed circuit), or to a product pile. **Splits** send, say, 60% of a stream one way and 40% another.
+- **VSMA screen sizing** — each deck is sized by the 9‑factor method, **validated against the Handbook worked example** (reproduces its 48 / 93 / 111 ft² required areas exactly). Reports required vs. actual area, utilization, bed depth and efficiency.
+- **Realistic screening** — product gradations use a Whiten/Tromp partition curve with an *achieved* efficiency derived from bed depth, near‑size content and loading, so product curves get realistic S‑shaped tails instead of perfect cuts. (VSMA sizing still uses the ideal undersize.)
+- **Five crusher types** — Jaw, Gyratory, Cone, HSI and VSI, each with its own product curve (cone and HSI digitized from real Metso Nordberg charts), reduction‑ratio limits, capacity and feed‑size limit. The VSI is speed‑controlled (rotor m/s) rather than a size gap.
+- **Routed‑graph solver** — the plant is a directed graph solved by successive substitution; recirculating loads build up and converge, and runaway loops are detected and flagged. Mass is conserved throughout, and per‑stream bulk density is tracked so each screen sizes on its real material weight.
+- **Multiple feeds** — blend several feed sources (different materials, rates, densities) into one circuit.
+- **Interactive flowsheet editor** — a pan/zoom canvas where you drag units around, wire them by dragging from output ports, and click a unit to edit it. Stays in sync with the form‑based Plant tab (both edit one shared model).
+- **Analysis & output** — a plant‑wide gradation chart (every stream, spline‑smoothed), a **max‑feed / bottleneck** finder (largest fresh feed before a screen overloads or a crusher tops out, and which unit is the constraint), and a **printable one‑page datasheet** (Export PDF).
+
+## Tech
+
+- **React 19 · TypeScript · Vite**
+- **Vitest** engine test suite (~60 tests)
+- A pure, UI‑free calculation engine in `src/engine/` — all unit‑tested
+- Browser‑only; state persists to `localStorage`
+
+## Running locally
 
 ```bash
-nvm use              # Node 24 (installed via nvm)
 npm install
-npm run dev          # http://localhost:5173
-npm test             # engine unit tests (Vitest)
-npm run build        # typecheck + production build
+npm run dev      # http://localhost:5173
+
+npm run build    # type-check (tsc -b) + production build to dist/
+npm test         # or: npx vitest run  — the engine test suite
 ```
-
-## Coefficient data
-
-The factor tables in [`src/engine/tables.ts`](src/engine/tables.ts) are
-transcribed from the VSMA Handbook (9-factor method) and **validated against the
-Handbook's own worked example** — the engine reproduces its 48 / 93 / 111 ft²
-required-area results and 45 / 75 / 90 / 90 STPH product split exactly (see
-`engine.test.ts`). A few `% open area` values (Factor G denominator) for openings
-outside that example are marked `VERIFY` and should be confirmed against a
-clearer scan; they only matter when a non-standard cloth is specified.
 
 ## Architecture
 
 ```
 src/
-  model/types.ts        Domain types (Feed, Screen, Deck, Stream, results)
-  engine/               Pure TS, no UI, unit-tested
-    gradation.ts        Sieve math: % passing, oversize/half-size, blending
-    tables.ts           VSMA coefficient tables (inch-keyed)
-    vsma.ts             A-I factor method (mm->in conversion), required-area calc
-    separation.ts       Ideal split at the opening -> product gradations
-    crusher.ts          Gaudin-Schuhmann crusher product (closed circuit)
-    simulate.ts         Chains 1-4 decks + closed-circuit solver, mass balance
-    engine.test.ts      12 tests (Handbook validation, closed circuit, mass)
-  ui/                   React components (charts via inline SVG, no chart dep)
-  App.tsx               Compose panels + JSON save/load + PDF (print) export
+  model/     domain types, the Plant model, and pure plant mutations
+  engine/    pure calculation logic (no React), fully unit-tested:
+    tables.ts       VSMA coefficient tables (inch-keyed)
+    vsma.ts         A–I factor method (mm→in conversion) + required-area calc
+    gradation.ts    sieve math: % passing, oversize/half-size, blending
+    separation.ts   ideal split at the opening → product gradations
+    partition.ts    realistic (Whiten/Tromp) screening
+    bedDepth.ts     discharge-end bed-depth check
+    crusher.ts      per-type crusher product models (jaw/gyratory/cone/HSI/VSI)
+    plant.ts        routed-graph solver (recycle loops, mass balance, runaway)
+    plantMaxFeed.ts throughput / bottleneck finder
+  ui/        React components (Plant builder, Flowsheet editor, Gradation, Simulator, Datasheet)
 ```
 
-The engine is deliberately UI-free and fully tested so the math is verifiable in
-isolation and reusable later (e.g. a crusher circuit or full flowsheet).
+The plant is one source of truth (`Plant`): units (feed / screen / crusher) whose outputs are wired to targets. Every view — the editable Simulator overview, the Plant tab, the Flowsheet editor, the Gradation tab — reads and edits that same model, so they never drift. Charts are hand‑drawn inline SVG (no chart dependency).
 
-## The VSMA method (9-factor)
+## The VSMA method (9 factors)
 
-For each deck:
-
-```
-required area (ft^2) = U / (A . B . C . D . E . F . G . H . I)
-U = STPH of undersize (material passing the deck opening)
-```
+For each deck, `required area (ft²) = U / (A·B·C·D·E·F·G·H·I)`, where `U` = tph of undersize (material finer than the opening):
 
 | Factor | Meaning |
 |--------|---------|
-| A | Basic capacity (STPH/ft²) from opening size |
+| A | Basic capacity from opening size |
 | B | % oversize in feed to the deck |
-| C | % half-size (finer than ½ aperture) |
+| C | % half‑size (finer than ½ aperture) |
 | D | Deck location (top 1.00 / 2nd 0.90 / 3rd 0.80) |
-| E | Wet-screening bonus (dry = 1.00) |
+| E | Wet‑screening bonus (dry = 1.00) |
 | F | Material weight ÷ 100 lb/ft³ |
 | G | Actual ÷ standard open area |
 | H | Opening shape (square / short slot / long slot) |
 | I | Objective efficiency (95% = 1.00, 90% = 1.15, …) |
 
-Products split by ideal separation at each opening (matches the Handbook), and a
-discharge-end bed-depth check is reported per deck.
+## Caveats
 
-## Screening model
-
-- **Ideal cut** (default): perfect separation at each opening — matches the VSMA
-  Handbook; product bands are narrow (steep gradation curves).
-- **Realistic screening** (toggle): a Whiten partition (Tromp) curve driven by
-  deck efficiency, so products have realistic tails and tonnages shift by the
-  misplaced material. VSMA sizing (required area) is unaffected — it always uses
-  the ideal undersize U.
-
-## Roadmap
-
-- Replace the provisional Gaudin–Schuhmann crusher curve with a digitized
-  production curve (tied to the crusher's closed-side setting).
-- Confirm the `VERIFY`-flagged open-area values.
-- Product spec/tolerance bands; metric (t/h) feed-rate option.
-- Later: multi-unit flowsheet.
-
-Bed-depth check (flags decks over ~4× the opening) and a screen-size recommender
-(smallest standard screen adequate on every deck) are built.
+An engineering estimation tool, not a substitute for a manufacturer sizing. The VSMA tables are inch‑keyed (sizes convert mm→inch only inside those lookups). The cone and HSI crusher curves are digitized from Metso Nordberg charts; jaw/gyratory are grounded in Metso's published reduction ratios and product/fines specs; the VSI is a speed‑to‑fineness model (a real Barmac curve would refine it).

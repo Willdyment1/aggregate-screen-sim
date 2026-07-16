@@ -101,7 +101,7 @@ export function PlantDatasheet({ plant, result, name, date }: { plant: Plant; re
           <div key={n.id} className="ds-unit">
             <h3>{n.name} — {spec.label} · {round(n.input.tph)} tph in · <span className={n.overCapacity ? 'ds-bad' : 'ds-ok'}>{n.overCapacity ? 'OVER CAP' : 'OK'}</span></h3>
             <table className="ds-table">
-              <thead><tr><th>Type</th><th>{spec.settingLabel} (mm)</th><th>Capacity (tph)</th><th>Throughput</th><th>Reduction</th><th>Product top</th><th>Product P80</th></tr></thead>
+              <thead><tr><th>Type</th><th>{spec.settingLabel} ({spec.settingUnit})</th><th>Capacity (tph)</th><th>Throughput</th><th>Reduction</th><th>Product top</th><th>Product P80</th></tr></thead>
               <tbody>
                 <tr>
                   <td>{spec.label}</td>

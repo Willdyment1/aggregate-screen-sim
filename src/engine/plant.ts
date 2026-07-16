@@ -10,7 +10,7 @@ import { PILE } from '../model/plant';
 import type { Stream } from '../model/types';
 import { sieveLabel } from '../model/sieves';
 import { blendGradations } from './gradation';
-import { crusherProduct } from './crusher';
+import { crusherProduct, crusherReduction } from './crusher';
 import { processScreen, type ScreenUnitResult } from './screenUnit';
 
 export interface ScreenNode {
@@ -172,7 +172,7 @@ export function simulatePlant(plant: Plant): PlantResult {
       const input = inputs.get(u.id) ?? EMPTY;
       const output: Stream = { tph: input.tph, gradation: crusherProduct(u.css, input.gradation, u.crusherType), density: input.density };
       const feedTop = Math.max(0, ...input.gradation.map((p) => p.size));
-      nodes.push({ kind: 'crusher', id: u.id, name: u.name, input, output, reductionRatio: u.css > 0 ? feedTop / u.css : 0, overCapacity: input.tph > u.capacity, capacity: u.capacity });
+      nodes.push({ kind: 'crusher', id: u.id, name: u.name, input, output, reductionRatio: crusherReduction(u.crusherType ?? 'cone', u.css, feedTop), overCapacity: input.tph > u.capacity, capacity: u.capacity });
       send(u.out, output, toPile(`${u.name} · crushed`, `Crushed ${u.css} mm`, `crush:${u.crusherType ?? 'cone'}:${u.css}`, u.id));
     }
   }

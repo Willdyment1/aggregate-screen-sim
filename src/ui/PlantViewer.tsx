@@ -250,7 +250,7 @@ export function PlantViewer({ plant, result, onChange, onEdit }: { plant: Plant;
                               {CRUSHER_TYPE_LIST.map((t) => (<option key={t} value={t}>{CRUSHER_SPECS[t].label}</option>))}
                             </select>
                           </label>
-                          <label>{spec.settingLabel} (mm)
+                          <label>{spec.settingLabel} ({spec.settingUnit})
                             <NumberField min={1} step="any" value={cu.css} list={`pvcss-${cu.id}`} onChange={(v) => patchUnit(cu.id, { css: v })} />
                             <datalist id={`pvcss-${cu.id}`}>{spec.settings.map((s) => (<option key={s} value={s} />))}</datalist>
                           </label>

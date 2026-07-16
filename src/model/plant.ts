@@ -23,8 +23,10 @@ export type Split = Route[];
 export const one = (t: Target): Split => [{ to: t, frac: 1 }];
 
 /** Crusher machine type (each has its own product curve / settings / capacity). */
-export type CrusherType = 'jaw' | 'gyratory' | 'cone' | 'hsi';
-export const CRUSHER_TYPE_LABEL: Record<CrusherType, string> = { jaw: 'Jaw', gyratory: 'Gyratory', cone: 'Cone', hsi: 'HSI' };
+export type CrusherType = 'jaw' | 'gyratory' | 'cone' | 'hsi' | 'vsi';
+export const CRUSHER_TYPE_LABEL: Record<CrusherType, string> = { jaw: 'Jaw', gyratory: 'Gyratory', cone: 'Cone', hsi: 'HSI', vsi: 'VSI' };
+/** The unit the crusher's setting is measured in (VSI = rotor speed, others = a size gap). */
+export const CRUSHER_SETTING_UNIT: Record<CrusherType, string> = { jaw: 'mm', gyratory: 'mm', cone: 'mm', hsi: 'mm', vsi: 'm/s' };
 
 export interface PlantFeed {
   id: string;
@@ -142,7 +144,7 @@ export function savePlant(plant: Plant): void {
 /** The name a unit gets from its size (deck openings for a screen, CSS for a crusher). */
 export function autoUnitName(u: PlantUnit): string {
   if (u.kind === 'screen') return u.decks.length ? `Screen ${u.decks.map((d) => sieveLabel(d.aperture)).join('/')}` : 'Screen';
-  if (u.kind === 'crusher') return `${CRUSHER_TYPE_LABEL[u.crusherType ?? 'cone']} ${u.css} mm`;
+  if (u.kind === 'crusher') { const t = u.crusherType ?? 'cone'; return `${CRUSHER_TYPE_LABEL[t]} ${u.css} ${CRUSHER_SETTING_UNIT[t]}`; }
   return u.name;
 }
 
