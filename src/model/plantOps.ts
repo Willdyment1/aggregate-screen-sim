@@ -166,12 +166,15 @@ export function connect(plant: Plant, unitId: string, port: string, target: Targ
   return setPort(plant, unitId, port, next);
 }
 
-/** Remove a target from an output port; renormalise (falls back to a pile). */
+/** Remove a target from an output port; renormalise the rest. Removing the last
+ *  route leaves the port *capped* (an empty split): the engine then drops that
+ *  stream instead of sending it to a pile, so deleting the edge to a pile also
+ *  deletes the pile. Re-dragging the port to empty space restores a pile. */
 export function disconnect(plant: Plant, unitId: string, port: string, target: Target): Plant {
   const u = plant.units.find((x) => x.id === unitId);
   if (!u) return plant;
   const kept = getPort(u, port).filter((r) => r.to !== target);
-  if (!kept.length) return setPort(plant, unitId, port, one(PILE));
+  if (!kept.length) return setPort(plant, unitId, port, []);
   const s = kept.reduce((a, r) => a + r.frac, 0);
   return setPort(plant, unitId, port, kept.map((r) => ({ ...r, frac: s > 0 ? r.frac / s : 1 / kept.length })));
 }

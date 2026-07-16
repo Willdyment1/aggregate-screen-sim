@@ -13,7 +13,7 @@ import { plantMaxFeed } from './plantMaxFeed';
 import { PILE, one, type Plant } from '../model/plant';
 import { parseSize } from '../ui/SieveSelect';
 import { plantToProject } from './plantToProject';
-import { duplicateUnit } from '../model/plantOps';
+import { duplicateUnit, disconnect } from '../model/plantOps';
 import { CRUSHER_SETTINGS, crusherProduct } from './crusher';
 import { defaultProject } from '../defaults';
 import type { Gradation, Project } from '../model/types';
@@ -364,6 +364,29 @@ describe('routed plant graph (branching + recycle loops)', () => {
     const total = r.piles.reduce((s, p) => s + p.stream.tph, 0);
     expect(total).toBeCloseTo(300, 0);
     expect(r.piles).toHaveLength(3); // A +1", B +3/8", B undersize
+  });
+
+  it('capping a port (deleting its last route) drops that pile', () => {
+    const base = simulatePlant(branched);
+    const basePiles = base.piles.length; // 3 piles
+    // Delete screen A's deck-1 oversize link to its pile → that port is capped.
+    const capped = disconnect(branched, 's1', 'deck:0', PILE);
+    const s1 = capped.units.find((u) => u.id === 's1')!;
+    expect(s1.kind === 'screen' && s1.deckTargets[0]).toEqual([]); // capped, not re-piled
+    const r = simulatePlant(capped);
+    expect(r.runaway).toBe(false);
+    expect(r.piles).toHaveLength(basePiles - 1); // the A +1" pile is gone
+    // Its tonnage is dropped (not re-routed), so products < feed by that stream.
+    const total = r.piles.reduce((s, p) => s + p.stream.tph, 0);
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThan(300 - 1);
+  });
+
+  it('re-connecting a capped port to a pile restores a pile', () => {
+    const capped = disconnect(branched, 's1', 'deck:0', PILE);
+    // Dragging the port to empty space wires it back to a pile (connect(…, PILE)).
+    const restored = { ...capped, units: capped.units.map((u) => (u.id === 's1' && u.kind === 'screen' ? { ...u, deckTargets: [one(PILE)] } : u)) };
+    expect(simulatePlant(restored).piles).toHaveLength(simulatePlant(branched).piles.length);
   });
 
   it('splits one output across two destinations by fraction (mass conserved)', () => {

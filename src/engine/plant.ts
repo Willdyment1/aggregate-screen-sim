@@ -72,7 +72,12 @@ const DEFAULT_ROUTE: Split = [{ to: PILE, frac: 1 }];
  *  hand each piece to `sink`. Fractions are normalised so mass is conserved
  *  even if the user's percentages don't add exactly to 100%. */
 const send = (routes: Split, stream: Stream, sink: (to: Target, s: Stream) => void) => {
-  const rs = routes && routes.length ? routes : DEFAULT_ROUTE;
+  // A missing/null split defaults to a product pile. An *explicitly empty* split
+  // is a capped port: the user deleted its last route, so the stream is dropped
+  // (no pile) rather than re-piled — deleting the edge to a pile deletes the pile.
+  if (routes == null) return sink(PILE, stream);
+  if (routes.length === 0) return;
+  const rs = routes;
   const sum = rs.reduce((a, r) => a + (r.frac > 0 ? r.frac : 0), 0);
   if (sum <= 0) {
     sink(rs[0]?.to ?? PILE, stream);

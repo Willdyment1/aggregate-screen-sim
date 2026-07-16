@@ -112,7 +112,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
       setView(bounds);
     }
   }, [structureKey, fitNonce, bounds]);
-  const [selected, setSelected] = useState<{ kind: 'unit' | 'edge'; id: string; port?: string; target?: string } | null>(null);
+  const [selected, setSelected] = useState<{ kind: 'unit' | 'edge'; id: string; from?: string; port?: string; target?: string } | null>(null);
   const [tempEnd, setTempEnd] = useState<Pos | null>(null);
   const drag = useRef<
     | { mode: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -252,6 +252,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   const selUnit = selected?.kind === 'unit' ? plant.units.find((u) => u.id === selected.id) : undefined;
   if (selected?.kind === 'unit' && !selUnit) setSelected(null); // unit was deleted
 
+  // Delete / Backspace removes the selected link (unless you're typing in the
+  // inspector). Deleting a link to a pile caps that port, so the pile goes too.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+      const t = ev.target as HTMLElement | null;
+      if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      if (selected?.kind === 'edge' && selected.from && selected.port && selected.target != null) {
+        ev.preventDefault();
+        onChange(disconnect(plant, selected.from, selected.port, selected.target));
+        setSelected(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected, plant, onChange]);
+
   // Clean node-editor edges: horizontal tangents off the right output into the
   // target's left face. Recycle loops bow downward so they read as a return line.
   const edgePath = (e: Edge) => {
@@ -274,7 +291,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit</span>
+        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it — removing a link to a pile removes the pile too</span>
       </div>
 
       <div className="fs-body">
@@ -297,7 +314,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             return (
               <g key={e.id}>
                 <path d={edgePath(e)} fill="none" stroke="transparent" strokeWidth={12} style={{ cursor: 'pointer' }}
-                  onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, port: e.port, target: e.toKey }); }} />
+                  onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, from: e.from, port: e.port, target: e.toKey }); }} />
                 <path d={edgePath(e)} fill="none" stroke={on ? '#d9480f' : e.recycle ? '#b58bd8' : '#9aa4b0'} strokeWidth={on ? 2.4 : 1.6}
                   strokeDasharray={e.recycle ? '5 4' : undefined} markerEnd="url(#fs-arrow)" />
                 {e.tph > 0.5 && <text x={(e.a.x + e.b.x) / 2} y={(e.a.y + e.b.y) / 2 - 3 + (e.recycle ? 42 : 0)} className="fs-edge-label" textAnchor="middle">{round(e.tph)} tph</text>}
