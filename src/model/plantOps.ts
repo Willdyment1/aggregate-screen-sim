@@ -2,7 +2,7 @@
 // so both edit the one plant identically. Every op returns a fresh, name-normalised
 // plant; callers just do `onChange(op(plant, ...))`.
 import type { Deck } from './types';
-import { PILE, one, normalizeNames, type Plant, type PlantUnit, type PlantFeed, type PlantScreen, type PlantCrusher, type Split, type Target } from './plant';
+import { PILE, MERGE, one, normalizeNames, type Plant, type PlantUnit, type PlantFeed, type PlantScreen, type PlantCrusher, type Split, type Target } from './plant';
 import { STANDARD_SIEVES } from './sieves';
 import { FEED_PRESETS } from './feedPresets';
 
@@ -20,6 +20,22 @@ export const newScreen = (n: number): PlantScreen => ({
 export const newCrusher = (n: number): PlantCrusher => ({ id: uid(), kind: 'crusher', name: `Crusher ${n}`, crusherType: 'cone', css: 13, capacity: 200, out: one(PILE) });
 
 const isPile = (s: Split) => s.length === 1 && s[0].to === PILE;
+/** A port set to fold into a sibling output (see MERGE). */
+export const isMergeSplit = (s?: Split): boolean => !!s && s.length === 1 && s[0].to === MERGE;
+
+/** The sibling port a screen's MERGE'd outputs fold into: the finest output that
+ *  still goes somewhere — the undersize if it's routed, else the finest deck
+ *  oversize. `null` if nothing is left to absorb them. Single source of truth for
+ *  both the engine (blends the stream) and the flowsheet (draws the fold). */
+export function mergeSinkPort(u: PlantScreen): string | null {
+  const ranked = [
+    ...u.decks.map((d, i) => ({ port: `deck:${i}`, routes: u.deckTargets[i] ?? one(PILE), rank: d.aperture })),
+    { port: 'under', routes: u.underTarget, rank: -1 },
+  ];
+  const sinks = ranked.filter((r) => !isMergeSplit(r.routes) && r.routes.length > 0);
+  if (!sinks.length) return null;
+  return sinks.reduce((a, b) => (b.rank < a.rank ? b : a)).port;
+}
 
 export function setUnit(plant: Plant, id: string, patch: Partial<PlantUnit>): Plant {
   return normalizeNames({ ...plant, units: plant.units.map((u) => (u.id === id ? ({ ...u, ...patch } as PlantUnit) : u)) });
@@ -160,21 +176,32 @@ const setPort = (plant: Plant, unitId: string, port: string, routes: Split): Pla
 export function connect(plant: Plant, unitId: string, port: string, target: Target): Plant {
   const u = plant.units.find((x) => x.id === unitId);
   if (!u || unitId === target) return plant;
-  const routes = getPort(u, port);
+  // A capped ([]) or folded (MERGE) port has no real routes — reconnecting
+  // replaces the sentinel outright rather than splitting against it.
+  const raw = getPort(u, port);
+  const routes = isMergeSplit(raw) ? [] : raw;
   if (routes.some((r) => r.to === target)) return plant;
-  const next: Split = isPile(routes) && target !== PILE ? one(target) : [...routes, { to: target, frac: 0 }].map((r, _, a) => ({ ...r, frac: 1 / a.length }));
+  const next: Split =
+    routes.length === 0 ? one(target)
+    : isPile(routes) && target !== PILE ? one(target)
+    : [...routes, { to: target, frac: 0 }].map((r, _, a) => ({ ...r, frac: 1 / a.length }));
   return setPort(plant, unitId, port, next);
 }
 
 /** Remove a target from an output port; renormalise the rest. Removing the last
- *  route leaves the port *capped* (an empty split): the engine then drops that
- *  stream instead of sending it to a pile, so deleting the edge to a pile also
- *  deletes the pile. Re-dragging the port to empty space restores a pile. */
+ *  route on a port that had a split hands its share to the remaining branch. When
+ *  a port loses its *only* route, its stream would otherwise vanish — so if the
+ *  unit has another output that still goes somewhere, we fold this stream into it
+ *  (MERGE) to conserve tonnage; a single-output unit (feed/crusher) caps instead.
+ *  Re-dragging the port to another box or empty space restores a normal route. */
 export function disconnect(plant: Plant, unitId: string, port: string, target: Target): Plant {
   const u = plant.units.find((x) => x.id === unitId);
   if (!u) return plant;
   const kept = getPort(u, port).filter((r) => r.to !== target);
-  if (!kept.length) return setPort(plant, unitId, port, []);
+  if (!kept.length) {
+    const hasSink = portsOf(u).some((p) => p !== port && getPort(u, p).length > 0 && !isMergeSplit(getPort(u, p)));
+    return setPort(plant, unitId, port, hasSink ? [{ to: MERGE, frac: 1 }] : []);
+  }
   const s = kept.reduce((a, r) => a + r.frac, 0);
   return setPort(plant, unitId, port, kept.map((r) => ({ ...r, frac: s > 0 ? r.frac / s : 1 / kept.length })));
 }

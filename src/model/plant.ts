@@ -9,6 +9,11 @@ import { FEED_PRESETS } from './feedPresets';
 /** Output target: another unit's id, or a product pile. */
 export type Target = string;
 export const PILE: Target = 'pile';
+/** Sentinel target: fold this output's stream into a sibling output of the same
+ *  unit (a screen's oversize → its undersize) instead of piling it separately.
+ *  Set when the user deletes a stream that has no split-branch to absorb it, so
+ *  the tonnage is conserved rather than dropped. */
+export const MERGE: Target = 'merge';
 
 /** One weighted destination for an output. `frac` is 0..1; the routes for a
  *  single output should sum to ~1 (a splitter divides the stream by mass). */

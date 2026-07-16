@@ -10,10 +10,10 @@ import { realisticSplit, partitionToOversize } from './partition';
 import { bedDepth } from './bedDepth';
 import { simulatePlant } from './plant';
 import { plantMaxFeed } from './plantMaxFeed';
-import { PILE, one, type Plant } from '../model/plant';
+import { PILE, MERGE, one, type Plant } from '../model/plant';
 import { parseSize } from '../ui/SieveSelect';
 import { plantToProject } from './plantToProject';
-import { duplicateUnit, disconnect } from '../model/plantOps';
+import { duplicateUnit, disconnect, connect } from '../model/plantOps';
 import { CRUSHER_SETTINGS, crusherProduct } from './crusher';
 import { defaultProject } from '../defaults';
 import type { Gradation, Project } from '../model/types';
@@ -366,27 +366,47 @@ describe('routed plant graph (branching + recycle loops)', () => {
     expect(r.piles).toHaveLength(3); // A +1", B +3/8", B undersize
   });
 
-  it('capping a port (deleting its last route) drops that pile', () => {
-    const base = simulatePlant(branched);
-    const basePiles = base.piles.length; // 3 piles
-    // Delete screen A's deck-1 oversize link to its pile → that port is capped.
-    const capped = disconnect(branched, 's1', 'deck:0', PILE);
-    const s1 = capped.units.find((u) => u.id === 's1')!;
-    expect(s1.kind === 'screen' && s1.deckTargets[0]).toEqual([]); // capped, not re-piled
-    const r = simulatePlant(capped);
+  // A single screen with both outputs going to their own pile.
+  const twoPile: Plant = {
+    realistic: false,
+    units: [
+      { id: 'f', kind: 'feed', name: 'Feed', tph: 300, gradation: feedGrad, bulkDensity: 100, wet: false, out: one('s') },
+      { id: 's', kind: 'screen', name: 'A', width: 8, length: 20, travelRate: 75, targetEfficiency: 90, decks: [{ aperture: 25, openAreaPct: 60, openingShape: 'square' }], deckTargets: [one(PILE)], underTarget: one(PILE) },
+    ],
+  };
+
+  it('deleting a lone output folds its tonnage into the sibling (mass kept)', () => {
+    const before = simulatePlant(twoPile);
+    expect(before.piles).toHaveLength(2); // +1", −1"
+    expect(before.piles.reduce((s, p) => s + p.stream.tph, 0)).toBeCloseTo(300, 0);
+
+    // Delete the oversize link → no split-branch to absorb it, so it folds into
+    // the undersize (MERGE), not dropped.
+    const merged = disconnect(twoPile, 's', 'deck:0', PILE);
+    const s = merged.units.find((u) => u.id === 's')!;
+    expect(s.kind === 'screen' && s.deckTargets[0]).toEqual([{ to: MERGE, frac: 1 }]);
+
+    const r = simulatePlant(merged);
     expect(r.runaway).toBe(false);
-    expect(r.piles).toHaveLength(basePiles - 1); // the A +1" pile is gone
-    // Its tonnage is dropped (not re-routed), so products < feed by that stream.
-    const total = r.piles.reduce((s, p) => s + p.stream.tph, 0);
-    expect(total).toBeGreaterThan(0);
-    expect(total).toBeLessThan(300 - 1);
+    expect(r.piles).toHaveLength(1); // only the combined undersize pile remains
+    expect(r.piles.reduce((s, p) => s + p.stream.tph, 0)).toBeCloseTo(300, 0); // tonnage kept
+    expect(r.piles[0].stream.tph).toBeCloseTo(300, 0);
   });
 
-  it('re-connecting a capped port to a pile restores a pile', () => {
-    const capped = disconnect(branched, 's1', 'deck:0', PILE);
-    // Dragging the port to empty space wires it back to a pile (connect(…, PILE)).
-    const restored = { ...capped, units: capped.units.map((u) => (u.id === 's1' && u.kind === 'screen' ? { ...u, deckTargets: [one(PILE)] } : u)) };
-    expect(simulatePlant(restored).piles).toHaveLength(simulatePlant(branched).piles.length);
+  it('a single-output unit with no sibling caps (drops) instead of folding', () => {
+    // A feed's only output has no sibling to fold into → capped, tonnage dropped.
+    const p: Plant = { realistic: false, units: [{ id: 'f', kind: 'feed', name: 'Feed', tph: 300, gradation: feedGrad, bulkDensity: 100, wet: false, out: one(PILE) }] };
+    const capped = disconnect(p, 'f', 'out', PILE);
+    expect(capped.units[0].kind === 'feed' && (capped.units[0] as { out: unknown }).out).toEqual([]);
+    expect(simulatePlant(capped).piles).toHaveLength(0);
+  });
+
+  it('re-dragging a folded port to empty space restores its own pile', () => {
+    const merged = disconnect(twoPile, 's', 'deck:0', PILE); // deck 0 folded (MERGE)
+    const restored = connect(merged, 's', 'deck:0', PILE); // drag to empty space = pile
+    const s = restored.units.find((u) => u.id === 's')!;
+    expect(s.kind === 'screen' && s.deckTargets[0]).toEqual(one(PILE));
+    expect(simulatePlant(restored).piles).toHaveLength(2); // both piles back
   });
 
   it('splits one output across two destinations by fraction (mass conserved)', () => {

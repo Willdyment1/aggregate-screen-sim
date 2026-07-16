@@ -6,7 +6,8 @@
 // Diverging loops (a crusher too coarse to break the recycle) are capped and
 // flagged as runaway — matching the single-unit engine.
 import type { Plant, PlantScreen, PlantCrusher, Target, Split } from '../model/plant';
-import { PILE } from '../model/plant';
+import { PILE, MERGE } from '../model/plant';
+import { mergeSinkPort, isMergeSplit } from '../model/plantOps';
 import type { Stream } from '../model/types';
 import { sieveLabel } from '../model/sieves';
 import { blendGradations } from './gradation';
@@ -66,6 +67,35 @@ const blend = (streams: Stream[]): Stream => {
   return { tph, gradation: blendGradations(arr), density };
 };
 
+interface Emit { port: string; routes: Split; stream: Stream; label: string; product: string; key: string }
+
+/** A screen's outputs after applying MERGE folds. Each deck oversize + the
+ *  undersize is one emission; any output routed to MERGE is blended into its
+ *  sink sibling (see mergeSinkPort) and not emitted on its own — so its tonnage
+ *  is carried in the sink's pile/stream rather than dropped. */
+function screenOutputs(u: PlantScreen, res: ScreenUnitResult, name: string, density?: number): Emit[] {
+  const bottom = u.decks[u.decks.length - 1].aperture;
+  const emits = new Map<string, Emit>();
+  res.products.forEach((p) =>
+    emits.set(`deck:${p.deckIndex}`, {
+      port: `deck:${p.deckIndex}`, routes: u.deckTargets[p.deckIndex] ?? DEFAULT_ROUTE, stream: { ...p.stream, density },
+      label: `${name} · +${sieveLabel(p.aperture)}`, product: `+${sieveLabel(p.aperture)}`, key: `over:${p.aperture}`,
+    }),
+  );
+  emits.set('under', {
+    port: 'under', routes: u.underTarget, stream: { ...res.undersize, density },
+    label: `${name} · −${sieveLabel(bottom)}`, product: `−${sieveLabel(bottom)}`, key: `under:${bottom}`,
+  });
+  const sink = mergeSinkPort(u);
+  for (const [port, e] of [...emits]) {
+    if (!isMergeSplit(e.routes)) continue;
+    const sinkEmit = sink && sink !== port ? emits.get(sink) : undefined;
+    if (sinkEmit) sinkEmit.stream = blend([sinkEmit.stream, e.stream]);
+    emits.delete(port); // folded (or, with no sink, dropped) — never emitted as MERGE
+  }
+  return [...emits.values()];
+}
+
 const DEFAULT_ROUTE: Split = [{ to: PILE, frac: 1 }];
 
 /** Divide a stream across a split's routes (by mass; gradation unchanged) and
@@ -120,8 +150,7 @@ export function simulatePlant(plant: Plant): PlantResult {
     screens.forEach((u) => {
       const inp = src.get(u.id) ?? EMPTY;
       const res = processScreen(inp, u.decks, { width: u.width, length: u.length, travelRate: u.travelRate }, { ...opts, bulkDensity: inp.density ?? opts.bulkDensity, targetEfficiency: u.targetEfficiency });
-      res.products.forEach((p) => send(u.deckTargets[p.deckIndex] ?? DEFAULT_ROUTE, { ...p.stream, density: inp.density }, route));
-      send(u.underTarget, { ...res.undersize, density: inp.density }, route);
+      screenOutputs(u, res, u.name, inp.density).forEach((o) => send(o.routes, o.stream, route));
     });
     crushers.forEach((u) => {
       const inp = src.get(u.id) ?? EMPTY;
@@ -160,7 +189,7 @@ export function simulatePlant(plant: Plant): PlantResult {
   const nodes: PlantNode[] = [];
   const rawPiles: Pile[] = [];
   const toPile = (label: string, product: string, key: string, fromUnit: string) => (target: Target, stream: Stream) => {
-    if ((target === PILE || !byId.has(target)) && stream.tph > 0.001) rawPiles.push({ fromUnit, label, product, key, stream });
+    if (target !== MERGE && (target === PILE || !byId.has(target)) && stream.tph > 0.001) rawPiles.push({ fromUnit, label, product, key, stream });
   };
 
   for (const u of plant.units) {
@@ -170,9 +199,7 @@ export function simulatePlant(plant: Plant): PlantResult {
       const input = inputs.get(u.id) ?? EMPTY;
       const result = processScreen(input, u.decks, { width: u.width, length: u.length, travelRate: u.travelRate }, { ...opts, bulkDensity: input.density ?? opts.bulkDensity, targetEfficiency: u.targetEfficiency });
       nodes.push({ kind: 'screen', id: u.id, name: u.name, input, result });
-      result.products.forEach((p) => send(u.deckTargets[p.deckIndex] ?? DEFAULT_ROUTE, { ...p.stream, density: input.density }, toPile(`${u.name} · +${sieveLabel(p.aperture)}`, `+${sieveLabel(p.aperture)}`, `over:${p.aperture}`, u.id)));
-      const bottom = u.decks[u.decks.length - 1].aperture;
-      send(u.underTarget, { ...result.undersize, density: input.density }, toPile(`${u.name} · −${sieveLabel(bottom)}`, `−${sieveLabel(bottom)}`, `under:${bottom}`, u.id));
+      screenOutputs(u, result, u.name, input.density).forEach((o) => send(o.routes, o.stream, toPile(o.label, o.product, o.key, u.id)));
     } else {
       const input = inputs.get(u.id) ?? EMPTY;
       const output: Stream = { tph: input.tph, gradation: crusherProduct(u.css, input.gradation, u.crusherType), density: input.density };

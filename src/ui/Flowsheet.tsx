@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Plant, PlantUnit, Split } from '../model/plant';
 import { PILE } from '../model/plant';
-import { addUnit, addFeed, setLayout, clearLayout, connect, disconnect, portsOf } from '../model/plantOps';
+import { addUnit, addFeed, setLayout, clearLayout, connect, disconnect, portsOf, mergeSinkPort, isMergeSplit } from '../model/plantOps';
 import type { PlantResult } from '../engine/plant';
 import { sieveLabel } from '../model/sieves';
 import { symbol, STROKE } from './equipment';
@@ -291,7 +291,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it — removing a link to a pile removes the pile too</span>
+        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it — a lone stream folds into the unit's other output (dashed “merged”) so the tonnage is kept</span>
       </div>
 
       <div className="fs-body">
@@ -327,6 +327,27 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                 )}
               </g>
             );
+          })}
+
+          {/* MERGE folds: a capped-but-folded output loops into its sink sibling
+              on the same box (dashed) — its tonnage lands in that pile. */}
+          {plant.units.map((u) => {
+            if (u.kind !== 'screen') return null;
+            const sink = mergeSinkPort(u);
+            if (!sink) return null;
+            const ports = portsOf(u);
+            return ports.map((port) => {
+              if (!isMergeSplit(routesOfPort(u, port))) return null;
+              const a = anchorRight(u.id, ports.indexOf(port), ports.length);
+              const b = anchorRight(u.id, ports.indexOf(sink), ports.length);
+              const mx = Math.max(a.x, b.x) + 30;
+              return (
+                <g key={`fold-${u.id}-${port}`}>
+                  <path d={`M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`} fill="none" stroke="#b58bd8" strokeWidth={1.4} strokeDasharray="4 3" />
+                  <text x={mx + 4} y={(a.y + b.y) / 2 + 3} className="fs-edge-label">merged</text>
+                </g>
+              );
+            });
           })}
 
           {tempEnd && drag.current?.mode === 'connect' && (() => {
