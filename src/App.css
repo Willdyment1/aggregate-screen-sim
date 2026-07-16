@@ -370,7 +370,7 @@
 }
 
 .legend-item:focus-visible {
-  outline: 2px solid #2c7be8;
+  outline: 2px solid #1963ff;
   outline-offset: 1px;
 }
 
@@ -396,7 +396,7 @@
   background: none;
   border: none;
   padding: 0;
-  color: #2c7be8;
+  color: #1963ff;
   cursor: pointer;
   text-decoration: underline;
 }
@@ -624,7 +624,7 @@
 }
 
 .flow-sel {
-  fill: #2c5fe81a;
+  fill: #1963ff1f;
   stroke: var(--accent);
   stroke-width: 1.5;
   stroke-dasharray: 5 3;
@@ -647,16 +647,86 @@
 
 .app-footer {
   margin-top: 2rem;
-  padding-top: 0.9rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--line);
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+.app-footer p {
+  margin: 0.35rem 0 0;
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.footer-mark {
+  height: 22px;
+  width: auto;
+  color: var(--navy);
+}
+
+.footer-logo {
+  height: 20px;
+  width: auto;
+  color: var(--navy);
+  opacity: 0.9;
+}
+
+.brand-disclaimer {
+  font-size: 0.72rem;
+  opacity: 0.75;
 }
 
 .app-footer code {
   background: #00000010;
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
+}
+
+/* --- Amrize brand bar ----------------------------------------------------- */
+.brand-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 1.1rem;
+  margin-bottom: 1rem;
+  border-radius: 12px;
+  background: linear-gradient(100deg, var(--navy) 0%, #062b93 45%, var(--accent) 100%);
+  box-shadow: 0 6px 20px -12px rgba(1, 30, 106, 0.65);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.brand-logo {
+  height: 30px;
+  width: auto;
+  color: #fff;
+}
+
+.brand-tagline {
+  color: var(--sky);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.title-mark {
+  height: 0.92em;
+  width: auto;
+  color: var(--accent);
+  vertical-align: -0.06em;
+  margin-right: 0.45rem;
 }
 
 /* Verdict banner */
@@ -839,6 +909,7 @@
 
 @media print {
   /* Print only the datasheet — hide the whole interactive app. */
+  .brand-bar,
   .app-header,
   .tabs,
   main,
@@ -2180,7 +2251,7 @@
 .pd-pile-name {
   font-size: 11px;
   font-weight: 600;
-  fill: #2c5fe8;
+  fill: #1963ff;
 }
 .pd-pile-sub {
   font-size: 10px;

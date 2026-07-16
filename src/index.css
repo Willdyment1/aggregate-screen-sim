@@ -1,13 +1,18 @@
 :root {
-  --bg: #f4f6f8;
+  /* Amrize brand palette (from amrize.com): brand blue #1963ff, navy #011e6a,
+     sky #7cd3ff, pale #eef7ff, green #01c88e, orange-red #ff4412. */
+  --bg: #eef7ff;
   --panel: #ffffff;
-  --ink: #1c2530;
-  --muted: #5b6673;
-  --line: #dfe4ea;
-  --accent: #2c5fe8;
+  --ink: #0f2350;
+  --muted: #5a6a86;
+  --line: #d4e0f4;
+  --accent: #1963ff;
   --accent-ink: #fff;
-  --ok: #1f9d55;
-  --over: #d9480f;
+  --navy: #011e6a;
+  --sky: #7cd3ff;
+  --pale: #eef7ff;
+  --ok: #0aa877;
+  --over: #e23a13;
   --warn-bg: #fff4e0;
   --warn-line: #e8b04b;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;

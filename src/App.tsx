@@ -8,6 +8,7 @@ import { PlantDatasheet } from './ui/PlantDatasheet';
 import { loadPlant, savePlant, defaultPlant, normalizeNames, migratePlant, type Plant } from './model/plant';
 import { simulatePlant } from './engine/plant';
 import { ErrorBoundary } from './ui/ErrorBoundary';
+import { AmrizeLogo, AmrizeMark } from './ui/AmrizeLogo';
 import './App.css';
 
 export default function App() {
@@ -153,9 +154,16 @@ export default function App() {
         </ErrorBoundary>
       </div>
 
+      <div className="brand-bar">
+        <a className="brand-lockup" href="https://www.amrize.com" target="_blank" rel="noopener noreferrer" aria-label="Amrize">
+          <AmrizeLogo className="brand-logo" />
+        </a>
+        <span className="brand-tagline">Building North America</span>
+      </div>
+
       <header className="app-header">
         <div>
-          <h1>Aggregate Screening Simulator</h1>
+          <h1><AmrizeMark className="title-mark" title="" aria-hidden="true" />Aggregate Screening Simulator</h1>
           <p className="subtitle">VSMA factor method · sizing + product simulation</p>
           <p className="units-legend">Sizes in mm · screen in ft · feed rate in tph</p>
         </div>
@@ -267,8 +275,18 @@ export default function App() {
       )}
 
       <footer className="app-footer">
-        VSMA 9-factor method (validated against the Handbook example: 48 / 93 / 111 ft²). The <strong>Plant</strong> tab
-        is the source of truth — every other tab is derived from it.
+        <div className="footer-brand">
+          <AmrizeMark className="footer-mark" title="Amrize" />
+          <AmrizeLogo className="footer-logo" title="Amrize" />
+        </div>
+        <p>
+          VSMA 9-factor method (validated against the Handbook example: 48 / 93 / 111 ft²). The <strong>Plant</strong> tab
+          is the source of truth — every other tab is derived from it.
+        </p>
+        <p className="brand-disclaimer">
+          Independent engineering demo styled in the Amrize brand for portfolio purposes — not affiliated with or
+          endorsed by Amrize.
+        </p>
       </footer>
     </div>
   );
