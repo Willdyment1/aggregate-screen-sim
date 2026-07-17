@@ -507,6 +507,11 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             <marker id="fs-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#9aa4b0" />
             </marker>
+            {/* Bigger red head for two-way (recirculation) arrows so the back arrow
+                reads clearly even next to the blue port dots. */}
+            <marker id="fs-arrow-2w" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#dc2626" />
+            </marker>
           </defs>
 
           {edges.map((e) => {
@@ -520,12 +525,15 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             const [delFrom, delPort, delTarget] = back ? [back.from, back.port, back.toKey] : [e.from, e.port, e.toKey];
             return (
               <g key={e.id}>
-                <path d={d} fill="none" stroke="transparent" strokeWidth={12} style={{ cursor: 'pointer' }}
+                <path d={d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
                   onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, from: delFrom, port: delPort, target: delTarget }); }} />
-                <path d={d} fill="none" stroke={on ? '#d9480f' : e.recycle && !back ? '#b58bd8' : '#9aa4b0'} strokeWidth={on ? 2.4 : 1.6}
-                  strokeDasharray={e.recycle && !back ? '5 4' : undefined} markerEnd="url(#fs-arrow)" markerStart={back ? 'url(#fs-arrow)' : undefined} />
-                {e.tph > 0.5 && <text x={midx} y={back ? midy - 8 : e.recycle ? recycleDip(e) - 8 : midy - 3} className="fs-edge-label" textAnchor="middle">{round(e.tph)} tph</text>}
-                {back && back.tph > 0.5 && <text x={midx} y={midy + 16} className="fs-edge-label" textAnchor="middle">{round(back.tph)} tph</text>}
+                <path d={d} fill="none"
+                  stroke={back ? (on ? '#b91c1c' : '#dc2626') : on ? '#d9480f' : e.recycle ? '#b58bd8' : '#9aa4b0'}
+                  strokeWidth={back ? (on ? 3.2 : 2.6) : on ? 2.4 : 1.6}
+                  strokeDasharray={e.recycle && !back ? '5 4' : undefined}
+                  markerEnd={back ? 'url(#fs-arrow-2w)' : 'url(#fs-arrow)'} markerStart={back ? 'url(#fs-arrow-2w)' : undefined} />
+                {e.tph > 0.5 && <text x={midx} y={back ? midy - 9 : e.recycle ? recycleDip(e) - 8 : midy - 3} className="fs-edge-label" textAnchor="middle" fill={back ? '#dc2626' : undefined}>{round(e.tph)} tph</text>}
+                {back && back.tph > 0.5 && <text x={midx} y={midy + 18} className="fs-edge-label" textAnchor="middle" fill="#dc2626">{round(back.tph)} tph</text>}
                 {on && (
                   <g transform={`translate(${midx} ${midy})`} style={{ cursor: 'pointer' }}
                     onPointerDown={(ev) => { ev.stopPropagation(); onChange(disconnect(plant, delFrom, delPort, delTarget)); setSelected(null); }}>
