@@ -167,32 +167,33 @@ export function ScreenCard({ plant, u, node, onChange, showRoute = true }: { pla
         <label>Efficiency (%)<NumberField value={u.targetEfficiency} min={50} max={95} onChange={(v) => onChange(setUnit(plant, u.id, { targetEfficiency: v }))} /></label>
       </div>
 
-      <table className="grad-table plant-deck-table">
-        <thead>
-          <tr><th>#</th><th>Opening</th><th>Shape</th><th>OA%</th><th>Load</th><th>Bed</th><th /></tr>
-        </thead>
-        <tbody>
-          {u.decks.map((d, di) => {
-            const dr = res?.decks[di];
-            const load = dr ? (dr.requiredArea / dr.actualArea) * 100 : 0;
-            return (
-              <tr key={di}>
-                <td>{di + 1}</td>
-                <td><SieveSelect value={d.aperture} onChange={(v) => onChange(setDeck(plant, u.id, di, { aperture: v }))} /></td>
-                <td>
+      <div className="deck-list">
+        {u.decks.map((d, di) => {
+          const dr = res?.decks[di];
+          const load = dr ? (dr.requiredArea / dr.actualArea) * 100 : 0;
+          return (
+            <div className="deck-row" key={di}>
+              <div className="deck-main">
+                <span className="deck-n">Deck {di + 1}</span>
+                <SieveSelect className="deck-opening" value={d.aperture} onChange={(v) => onChange(setDeck(plant, u.id, di, { aperture: v }))} />
+                {u.decks.length > 1 && <button className="link-btn deck-del" onClick={() => onChange(removeDeck(plant, u.id, di))} aria-label="remove deck">✕</button>}
+              </div>
+              <div className="deck-sub">
+                <label>Shape
                   <select value={d.openingShape} onChange={(e) => onChange(setDeck(plant, u.id, di, { openingShape: e.target.value as OpeningShape }))}>
                     {OPENING_SHAPES.map((s) => (<option key={s.v} value={s.v}>{s.l}</option>))}
                   </select>
-                </td>
-                <td><NumberField value={d.openAreaPct} onChange={(v) => onChange(setDeck(plant, u.id, di, { openAreaPct: v }))} /></td>
-                <td className={`num ${dr && !dr.adequate ? 'over-limit' : ''}`}>{dr ? `${round(load)}%` : '—'}</td>
-                <td className={`num ${dr && !dr.bedDepthOk ? 'over-limit' : ''}`}>{dr ? `${round(dr.bedDepth)}` : '—'}</td>
-                <td>{u.decks.length > 1 && <button className="link-btn" onClick={() => onChange(removeDeck(plant, u.id, di))} aria-label="remove deck">✕</button>}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                </label>
+                <label>Open area
+                  <NumberField className="deck-oa" min={1} max={90} value={d.openAreaPct} onChange={(v) => onChange(setDeck(plant, u.id, di, { openAreaPct: v }))} />%
+                </label>
+                <span className={`deck-stat ${dr && !dr.adequate ? 'over-limit' : ''}`}>Load {dr ? `${round(load)}%` : '—'}</span>
+                <span className={`deck-stat ${dr && !dr.bedDepthOk ? 'over-limit' : ''}`}>Bed {dr ? `${round(dr.bedDepth)}"` : '—'}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
       {u.decks.length < 4 && <button className="secondary" onClick={() => onChange(addDeck(plant, u.id))}>+ Add deck</button>}
 
       {showRoute && (

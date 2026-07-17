@@ -2442,6 +2442,70 @@
   }
 }
 
+/* ---- Deck editor (screen card): spacious, wraps in the narrow inspector ---- */
+.deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0.6rem;
+}
+.deck-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  background: var(--panel);
+}
+.deck-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.deck-n {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The size selector takes all the room left over — no more truncated dropdown. */
+.deck-opening {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.deck-del {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.deck-del:hover {
+  color: var(--over);
+}
+.deck-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.8rem;
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.deck-sub label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.deck-sub select {
+  padding: 0.2rem 0.35rem;
+}
+.deck-oa {
+  width: 3.4rem;
+}
+.deck-stat {
+  font-variant-numeric: tabular-nums;
+}
+.deck-stat.over-limit {
+  color: var(--over);
+  font-weight: 600;
+}
+
 /* ---- Plant-wide max feed / bottleneck ------------------------------------- */
 .pmf-note {
   padding: 0.6rem 0.8rem;

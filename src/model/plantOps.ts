@@ -73,27 +73,19 @@ export function removeDeck(plant: Plant, id: string, di: number): Plant {
   });
 }
 
-/** Add a screen/crusher, auto-wiring the previous unit's primary output to it. */
+/** Add a screen/crusher as a standalone unit — nothing is wired to it, so the
+ *  user connects it themselves (drag on the flowsheet, or the card's routing). */
 export function addUnit(plant: Plant, kind: 'screen' | 'crusher', pos?: { x: number; y: number }): { plant: Plant; id: string } {
   const n = plant.units.filter((u) => u.kind === kind).length + 1;
   const nu = kind === 'screen' ? newScreen(n) : newCrusher(n);
-  const units = plant.units.map((u, i) => {
-    if (i !== plant.units.length - 1) return u;
-    if (u.kind === 'feed' && isPile(u.out)) return { ...u, out: one(nu.id) };
-    if (u.kind === 'crusher' && isPile(u.out)) return { ...u, out: one(nu.id) };
-    if (u.kind === 'screen' && isPile(u.underTarget)) return { ...u, underTarget: one(nu.id) };
-    return u;
-  });
   const layout = pos ? { ...(plant.layout ?? {}), [nu.id]: pos } : plant.layout;
-  return { plant: normalizeNames({ ...plant, units: [...units, nu], layout }), id: nu.id };
+  return { plant: normalizeNames({ ...plant, units: [...plant.units, nu], layout }), id: nu.id };
 }
 
-/** Add another feed, wired into the first screen if there is one. */
+/** Add another feed as a standalone unit — not wired to anything by default. */
 export function addFeed(plant: Plant, pos?: { x: number; y: number }): { plant: Plant; id: string } {
   const n = plant.units.filter((u) => u.kind === 'feed').length + 1;
   const nf = newFeed(n);
-  const firstScreen = plant.units.find((u) => u.kind === 'screen');
-  if (firstScreen) nf.out = one(firstScreen.id);
   const layout = pos ? { ...(plant.layout ?? {}), [nf.id]: pos } : plant.layout;
   return { plant: normalizeNames({ ...plant, units: [...plant.units, nf], layout }), id: nf.id };
 }
