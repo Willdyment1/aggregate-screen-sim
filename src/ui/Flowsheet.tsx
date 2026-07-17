@@ -17,7 +17,7 @@ type Box = { x: number; y: number; w: number; h: number };
 /** Product-pile key that a given output port feeds (mirrors the engine). */
 function portKey(u: PlantUnit, port: string): string {
   if (u.kind === 'feed') return `feed:${u.id}`;
-  if (u.kind === 'crusher') return `crush:${u.css}`;
+  if (u.kind === 'crusher') return `crush:${u.crusherType ?? 'cone'}:${u.css}`;
   if (port === 'under') return `under:${u.decks[u.decks.length - 1].aperture}`;
   return `over:${u.decks[Number(port.split(':')[1])].aperture}`;
 }
@@ -260,7 +260,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
       setView(bounds);
     }
   }, [structureKey, fitNonce, bounds]);
-  const [selected, setSelected] = useState<{ kind: 'unit' | 'edge'; id: string; from?: string; port?: string; target?: string } | null>(null);
+  const [selected, setSelected] = useState<{ kind: 'unit' | 'edge' | 'pile'; id: string; from?: string; port?: string; target?: string } | null>(null);
   const [tempEnd, setTempEnd] = useState<Pos | null>(null);
   // While a box is being dragged we only move it locally (no plant edit, so no
   // re-simulation) and commit once on release — keeps dragging smooth on big plants.
@@ -350,8 +350,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
       onChange(setLayout(plant, d.id, { x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) }));
       setDragPos(null);
     } else if (d.mode === 'node' && !d.moved) {
-      // A plain click selects a unit for editing; piles aren't editable, just movable.
-      setSelected(d.id.startsWith('pile:') ? null : { kind: 'unit', id: d.id });
+      // Click a unit to edit it, or a pile to select it (then ✕ / Delete removes it).
+      setSelected(d.id.startsWith('pile:') ? { kind: 'pile', id: d.id } : { kind: 'unit', id: d.id });
     } else if (d.mode === 'connect') {
       const w = toWorld(e.clientX, e.clientY);
       const hit = unitAt(w);
@@ -426,8 +426,26 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   const selUnit = selected?.kind === 'unit' ? plant.units.find((u) => u.id === selected.id) : undefined;
   if (selected?.kind === 'unit' && !selUnit) setSelected(null); // unit was deleted
 
-  // Delete / Backspace removes the selected link (unless you're typing in the
-  // inspector). Deleting a link to a pile caps that port, so the pile goes too.
+  // Delete a product pile: disconnect every output route that feeds it (each such
+  // port then caps or folds), so the pile disappears.
+  const deletePile = (pileKey: string) => {
+    let next = plant;
+    const feeders: { id: string; port: string; target: string }[] = [];
+    plant.units.forEach((u) => {
+      portsOf(u).forEach((port) => {
+        if (`pile:${portKey(u, port)}` !== pileKey) return;
+        routesOfPort(u, port).forEach((r) => {
+          const toUnit = r.to !== PILE && plant.units.some((x) => x.id === r.to);
+          if (r.frac > 0 && r.to !== MERGE && !toUnit) feeders.push({ id: u.id, port, target: r.to });
+        });
+      });
+    });
+    feeders.forEach((f) => { next = disconnect(next, f.id, f.port, f.target); });
+    onChange(next);
+    setSelected(null);
+  };
+
+  // Delete / Backspace removes the selected link or pile (unless you're typing).
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
@@ -437,6 +455,9 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         ev.preventDefault();
         onChange(disconnect(plant, selected.from, selected.port, selected.target));
         setSelected(null);
+      } else if (selected?.kind === 'pile') {
+        ev.preventDefault();
+        deletePile(selected.id);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -492,7 +513,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes and piles to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it</span>
+        <span className="fs-hint">Drag boxes and piles to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link or pile then ✕ (or press Delete) to remove it</span>
       </div>
 
       <div className="fs-legend">
@@ -607,15 +628,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             return <line className="fs-temp-edge" x1={a.x} y1={a.y} x2={tempEnd.x} y2={tempEnd.y} markerEnd="url(#fs-arrow)" />;
           })()}
 
-          {/* pile nodes — draggable like unit boxes */}
+          {/* pile nodes — draggable like unit boxes; click to select, ✕ to delete */}
           {result.piles.map((p) => {
-            const q = posD.get(`pile:${p.key}`)!;
+            const key = `pile:${p.key}`;
+            const q = posD.get(key)!;
+            const sel = selected?.kind === 'pile' && selected.id === key;
             return (
-              <g key={p.key} transform={`translate(${q.x} ${q.y})`} style={{ cursor: 'grab' }} onPointerDown={(e) => onNodeDown(e, `pile:${p.key}`)}>
-                <rect x={0} y={4} width={W} height={H - 4} fill="transparent" />
+              <g key={p.key} transform={`translate(${q.x} ${q.y})`} style={{ cursor: 'grab' }} onPointerDown={(e) => onNodeDown(e, key)}>
+                <rect x={0} y={4} width={W} height={H - 4} rx={12} fill="transparent" stroke={sel ? '#d9480f' : 'none'} strokeWidth={sel ? 2 : 0} strokeDasharray="4 3" />
                 <g transform={`translate(${W / 2} 34)`} style={{ pointerEvents: 'none' }}>{symbol('stockpile', 3)}</g>
                 <text x={W / 2} y={66} className="fs-node-name" textAnchor="middle" style={{ pointerEvents: 'none' }}>{p.product}</text>
                 <text x={W / 2} y={80} className="fs-node-sub" textAnchor="middle" style={{ pointerEvents: 'none' }}>{round(p.stream.tph)} tph</text>
+                {sel && (
+                  <g transform={`translate(${W - 6} 8)`} style={{ cursor: 'pointer' }} onPointerDown={(ev) => { ev.stopPropagation(); deletePile(key); }}>
+                    <circle r={9} fill="#fff" stroke="#d9480f" strokeWidth={1.5} />
+                    <text className="fs-x" textAnchor="middle" y={3.5}>✕</text>
+                  </g>
+                )}
               </g>
             );
           })}
