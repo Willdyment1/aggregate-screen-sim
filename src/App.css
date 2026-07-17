@@ -2381,6 +2381,8 @@
   background-image: radial-gradient(#e5eaf1 1px, transparent 1px);
   background-size: 22px 22px;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   cursor: grab;
 }
 .fs-node-box {

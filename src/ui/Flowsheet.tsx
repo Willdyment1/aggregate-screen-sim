@@ -350,7 +350,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
       onChange(setLayout(plant, d.id, { x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) }));
       setDragPos(null);
     } else if (d.mode === 'node' && !d.moved) {
-      setSelected({ kind: 'unit', id: d.id });
+      // A plain click selects a unit for editing; piles aren't editable, just movable.
+      setSelected(d.id.startsWith('pile:') ? null : { kind: 'unit', id: d.id });
     } else if (d.mode === 'connect') {
       const w = toWorld(e.clientX, e.clientY);
       const hit = unitAt(w);
@@ -491,7 +492,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it</span>
+        <span className="fs-hint">Drag boxes and piles to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it</span>
       </div>
 
       <div className="fs-legend">
@@ -606,14 +607,15 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             return <line className="fs-temp-edge" x1={a.x} y1={a.y} x2={tempEnd.x} y2={tempEnd.y} markerEnd="url(#fs-arrow)" />;
           })()}
 
-          {/* pile nodes */}
+          {/* pile nodes — draggable like unit boxes */}
           {result.piles.map((p) => {
             const q = posD.get(`pile:${p.key}`)!;
             return (
-              <g key={p.key} transform={`translate(${q.x} ${q.y})`}>
-                <g transform={`translate(${W / 2} 34)`}>{symbol('stockpile', 3)}</g>
-                <text x={W / 2} y={66} className="fs-node-name" textAnchor="middle">{p.product}</text>
-                <text x={W / 2} y={80} className="fs-node-sub" textAnchor="middle">{round(p.stream.tph)} tph</text>
+              <g key={p.key} transform={`translate(${q.x} ${q.y})`} style={{ cursor: 'grab' }} onPointerDown={(e) => onNodeDown(e, `pile:${p.key}`)}>
+                <rect x={0} y={4} width={W} height={H - 4} fill="transparent" />
+                <g transform={`translate(${W / 2} 34)`} style={{ pointerEvents: 'none' }}>{symbol('stockpile', 3)}</g>
+                <text x={W / 2} y={66} className="fs-node-name" textAnchor="middle" style={{ pointerEvents: 'none' }}>{p.product}</text>
+                <text x={W / 2} y={80} className="fs-node-sub" textAnchor="middle" style={{ pointerEvents: 'none' }}>{round(p.stream.tph)} tph</text>
               </g>
             );
           })}
