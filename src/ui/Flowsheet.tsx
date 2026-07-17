@@ -450,16 +450,35 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     posD.forEach((p) => { if (p.x + W > loX && p.x < hiX) clear = Math.max(clear, p.y + H); });
     return clear + 46;
   };
-  // Forward edges: horizontal tangents off the right output into the target's left
-  // face. Recycle edges drop into the return lane and rise back into the target.
+  // A plain output→target S-curve (horizontal tangents at both ends).
+  const straight = (e: Edge) => {
+    const k = Math.max(28, Math.min(110, Math.abs(e.b.x - e.a.x) * 0.5));
+    return `M ${e.a.x} ${e.a.y} C ${e.a.x + k} ${e.a.y}, ${e.b.x - k} ${e.b.y}, ${e.b.x} ${e.b.y}`;
+  };
+  // Forward edges use the S-curve. A recycle edge drops into the return lane and
+  // rises back into the target.
   const edgePath = (e: Edge) => {
     if (e.recycle) {
       const dip = recycleDip(e);
       return `M ${e.a.x} ${e.a.y} C ${e.a.x + 50} ${dip}, ${e.b.x - 50} ${dip}, ${e.b.x} ${e.b.y}`;
     }
-    const k = Math.max(28, Math.min(110, Math.abs(e.b.x - e.a.x) * 0.5));
-    return `M ${e.a.x} ${e.a.y} C ${e.a.x + k} ${e.a.y}, ${e.b.x - k} ${e.b.y}, ${e.b.x} ${e.b.y}`;
+    return straight(e);
   };
+
+  // Mutual pairs: A feeds B and B feeds straight back to A. Draw ONE two-way
+  // arrow along the forward curve instead of a separate dotted return line.
+  const isUnit = (id: string) => plant.units.some((u) => u.id === id);
+  const dirEdge = new Map<string, Edge>();
+  edges.forEach((e) => { if (isUnit(e.toKey)) dirEdge.set(`${e.from}->${e.toKey}`, e); });
+  const foldedBack = new Set<string>(); // recycle edges shown as the back-head of a two-way arrow
+  const twoWay = new Map<string, Edge>(); // forward edge id → its back edge
+  edges.forEach((e) => {
+    if (!isUnit(e.toKey)) return;
+    const rev = dirEdge.get(`${e.toKey}->${e.from}`);
+    if (!rev || rev.id === e.id || foldedBack.has(e.id)) return;
+    const primaryIsE = e.recycle === rev.recycle ? e.id < rev.id : !e.recycle; // the forward one leads
+    if (primaryIsE) { twoWay.set(e.id, rev); foldedBack.add(rev.id); }
+  });
 
   return (
     <div className="fs-wrap">
@@ -491,17 +510,25 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
           </defs>
 
           {edges.map((e) => {
+            if (foldedBack.has(e.id)) return null; // drawn as the back-head of its two-way partner
+            const back = twoWay.get(e.id);
             const on = selected?.kind === 'edge' && selected.id === e.id;
+            const d = back ? straight(e) : edgePath(e);
+            const midx = (e.a.x + e.b.x) / 2, midy = (e.a.y + e.b.y) / 2;
+            // A two-way arrow's ✕/Delete removes the loop-back route (leaving the
+            // forward link as a normal one-way arrow you can then delete too).
+            const [delFrom, delPort, delTarget] = back ? [back.from, back.port, back.toKey] : [e.from, e.port, e.toKey];
             return (
               <g key={e.id}>
-                <path d={edgePath(e)} fill="none" stroke="transparent" strokeWidth={12} style={{ cursor: 'pointer' }}
-                  onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, from: e.from, port: e.port, target: e.toKey }); }} />
-                <path d={edgePath(e)} fill="none" stroke={on ? '#d9480f' : e.recycle ? '#b58bd8' : '#9aa4b0'} strokeWidth={on ? 2.4 : 1.6}
-                  strokeDasharray={e.recycle ? '5 4' : undefined} markerEnd="url(#fs-arrow)" />
-                {e.tph > 0.5 && <text x={(e.a.x + e.b.x) / 2} y={e.recycle ? recycleDip(e) - 8 : (e.a.y + e.b.y) / 2 - 3} className="fs-edge-label" textAnchor="middle">{round(e.tph)} tph</text>}
+                <path d={d} fill="none" stroke="transparent" strokeWidth={12} style={{ cursor: 'pointer' }}
+                  onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, from: delFrom, port: delPort, target: delTarget }); }} />
+                <path d={d} fill="none" stroke={on ? '#d9480f' : e.recycle && !back ? '#b58bd8' : '#9aa4b0'} strokeWidth={on ? 2.4 : 1.6}
+                  strokeDasharray={e.recycle && !back ? '5 4' : undefined} markerEnd="url(#fs-arrow)" markerStart={back ? 'url(#fs-arrow)' : undefined} />
+                {e.tph > 0.5 && <text x={midx} y={back ? midy - 8 : e.recycle ? recycleDip(e) - 8 : midy - 3} className="fs-edge-label" textAnchor="middle">{round(e.tph)} tph</text>}
+                {back && back.tph > 0.5 && <text x={midx} y={midy + 16} className="fs-edge-label" textAnchor="middle">{round(back.tph)} tph</text>}
                 {on && (
-                  <g transform={`translate(${(e.a.x + e.b.x) / 2} ${(e.a.y + e.b.y) / 2})`} style={{ cursor: 'pointer' }}
-                    onPointerDown={(ev) => { ev.stopPropagation(); onChange(disconnect(plant, e.from, e.port, e.toKey)); setSelected(null); }}>
+                  <g transform={`translate(${midx} ${midy})`} style={{ cursor: 'pointer' }}
+                    onPointerDown={(ev) => { ev.stopPropagation(); onChange(disconnect(plant, delFrom, delPort, delTarget)); setSelected(null); }}>
                     <circle r={9} fill="#fff" stroke="#d9480f" strokeWidth={1.5} />
                     <text className="fs-x" textAnchor="middle" y={3.5}>✕</text>
                   </g>
