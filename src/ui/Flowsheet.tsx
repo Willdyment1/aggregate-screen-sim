@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Plant, PlantUnit, Split } from '../model/plant';
 import { PILE, MERGE } from '../model/plant';
-import { addUnit, addFeed, setLayout, clearLayout, connect, disconnect, portsOf, mergeSinkPort, isMergeSplit } from '../model/plantOps';
+import { addUnit, addFeed, addPile, removeUnit, setLayout, clearLayout, connect, disconnect, portsOf, mergeSinkPort, isMergeSplit } from '../model/plantOps';
 import type { PlantResult } from '../engine/plant';
 import { sieveLabel } from '../model/sieves';
 import { symbol, STROKE } from './equipment';
@@ -18,17 +18,20 @@ type Box = { x: number; y: number; w: number; h: number };
 function portKey(u: PlantUnit, port: string): string {
   if (u.kind === 'feed') return `feed:${u.id}`;
   if (u.kind === 'crusher') return `crush:${u.crusherType ?? 'cone'}:${u.css}`;
+  if (u.kind !== 'screen') return '';
   if (port === 'under') return `under:${u.decks[u.decks.length - 1].aperture}`;
   return `over:${u.decks[Number(port.split(':')[1])].aperture}`;
 }
 const portLabel = (u: PlantUnit, port: string): string => {
   if (u.kind === 'feed') return 'feed';
   if (u.kind === 'crusher') return 'crushed';
+  if (u.kind !== 'screen') return '';
   if (port === 'under') return `−${sieveLabel(u.decks[u.decks.length - 1].aperture)}`;
   return `+${sieveLabel(u.decks[Number(port.split(':')[1])].aperture)}`;
 };
 const routesOfPort = (u: PlantUnit, port: string): Split => {
   if (u.kind === 'feed' || u.kind === 'crusher') return u.out;
+  if (u.kind !== 'screen') return [];
   if (port === 'under') return u.underTarget;
   return u.deckTargets[Number(port.split(':')[1])] ?? [{ to: PILE, frac: 1 }];
 };
@@ -45,6 +48,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const unitIds = new Set(plant.units.map((u) => u.id));
     const unitTargets = (u: PlantUnit): string[] => {
       if (u.kind === 'feed' || u.kind === 'crusher') return u.out.map((r) => r.to);
+      if (u.kind !== 'screen') return [];
       return [...u.deckTargets.flatMap((dt) => dt.map((r) => r.to)), ...u.underTarget.map((r) => r.to)];
     };
 
@@ -67,9 +71,10 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     col.forEach((c) => (maxCol = Math.max(maxCol, c)));
     plant.units.forEach((u) => { if (!col.has(u.id)) col.set(u.id, ++maxCol); }); // disconnected → append
 
-    // Every node = a unit or a product pile. A pile sits one column right of the
-    // unit that feeds it.
-    const pilePresent = new Set(result.piles.map((p) => `pile:${p.key}`));
+    // Every node = a unit or an auto product pile. (Explicit stockpiles are real
+    // units, already positioned above; only auto-piles need placing here.)
+    const autoPiles = result.piles.filter((p) => !p.key.startsWith('pileunit:'));
+    const pilePresent = new Set(autoPiles.map((p) => `pile:${p.key}`));
     const nodeCol = new Map<string, number>();
     plant.units.forEach((u) => nodeCol.set(u.id, col.get(u.id) ?? 0));
     plant.units.forEach((u) =>
@@ -80,7 +85,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         }
       }),
     );
-    result.piles.forEach((p) => { const nk = `pile:${p.key}`; if (!nodeCol.has(nk)) nodeCol.set(nk, maxCol + 1); });
+    autoPiles.forEach((p) => { const nk = `pile:${p.key}`; if (!nodeCol.has(nk)) nodeCol.set(nk, maxCol + 1); });
 
     // Directed links carrying the source's output-port offset (its height on the
     // box, in row units). Ordering/aligning by this — not just the box centre —
@@ -105,7 +110,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const cols = new Map<number, string[]>();
     const push = (k: string) => { const c = nodeCol.get(k)!; (cols.get(c) ?? cols.set(c, []).get(c)!).push(k); };
     plant.units.forEach((u) => push(u.id));
-    result.piles.forEach((p) => push(`pile:${p.key}`));
+    autoPiles.forEach((p) => push(`pile:${p.key}`));
     const colIdxs = [...cols.keys()].sort((a, b) => a - b);
 
     const idx = new Map<string, number>();
@@ -223,7 +228,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const m = new Map<string, Pos>();
     const setPos = (k: string) => { const t = tr.get(k) ?? { dx: 0, dy: 0 }; m.set(k, layout[k] ?? { x: Math.round(PX(k) + t.dx), y: Math.round(y.get(k)! + t.dy) }); };
     plant.units.forEach((u) => setPos(u.id));
-    result.piles.forEach((p) => setPos(`pile:${p.key}`));
+    autoPiles.forEach((p) => setPos(`pile:${p.key}`));
     return m;
   }, [plant, result]);
 
@@ -239,7 +244,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const hasRecycle = plant.units.some((u) => {
       const su = pos.get(u.id);
       if (!su) return false;
-      const outs = u.kind === 'feed' || u.kind === 'crusher' ? u.out.map((r) => r.to) : [...u.deckTargets.flatMap((dt) => dt.map((r) => r.to)), ...u.underTarget.map((r) => r.to)];
+      const outs = u.kind === 'feed' || u.kind === 'crusher' ? u.out.map((r) => r.to) : u.kind === 'screen' ? [...u.deckTargets.flatMap((dt) => dt.map((r) => r.to)), ...u.underTarget.map((r) => r.to)] : [];
       return outs.some((t) => { const tp = pos.get(t); return tp && tp.x <= su.x; });
     });
     if (hasRecycle) y1 = Math.max(y1, floor + 70);
@@ -296,11 +301,12 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     setView((v) => ({ x: c.x - (c.x - v.x) * factor, y: c.y - (c.y - v.y) * factor, w: v.w * factor, h: v.h * factor }));
   };
 
-  // hit-test a world point against unit boxes
+  // hit-test a world point against unit boxes and stockpile nodes (so you can
+  // wire an output straight into a pile).
   const unitAt = (p: Pos): string | null => {
     for (const u of plant.units) {
-      const q = pos.get(u.id)!;
-      if (p.x >= q.x && p.x <= q.x + W && p.y >= q.y && p.y <= q.y + H) return u.id;
+      const q = pos.get(u.id);
+      if (q && p.x >= q.x && p.x <= q.x + W && p.y >= q.y && p.y <= q.y + H) return u.id;
     }
     return null;
   };
@@ -350,8 +356,9 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
       onChange(setLayout(plant, d.id, { x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) }));
       setDragPos(null);
     } else if (d.mode === 'node' && !d.moved) {
-      // Click a unit to edit it, or a pile to select it (then ✕ / Delete removes it).
-      setSelected(d.id.startsWith('pile:') ? { kind: 'pile', id: d.id } : { kind: 'unit', id: d.id });
+      // Click a unit to edit it, or a pile (explicit stockpile or auto) to select it.
+      const isPileNode = d.id.startsWith('pile:') || plant.units.some((u) => u.id === d.id && u.kind === 'pile');
+      setSelected(isPileNode ? { kind: 'pile', id: d.id } : { kind: 'unit', id: d.id });
     } else if (d.mode === 'connect') {
       const w = toWorld(e.clientX, e.clientY);
       const hit = unitAt(w);
@@ -371,6 +378,11 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const { plant: next, id } = addFeed(plant, centerPos());
     onChange(next);
     setSelected({ kind: 'unit', id });
+  };
+  const addPileAt = () => {
+    const { plant: next, id } = addPile(plant, centerPos());
+    onChange(next);
+    setSelected({ kind: 'pile', id });
   };
 
   // --- edges ------------------------------------------------------------------
@@ -423,7 +435,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     });
   });
 
-  const selUnit = selected?.kind === 'unit' ? plant.units.find((u) => u.id === selected.id) : undefined;
+  const selUnit = selected?.kind === 'unit' ? plant.units.find((u): u is Exclude<PlantUnit, { kind: 'pile' }> => u.id === selected.id && u.kind !== 'pile') : undefined;
   if (selected?.kind === 'unit' && !selUnit) setSelected(null); // unit was deleted
 
   // Delete a product pile: disconnect every output route that feeds it (each such
@@ -444,6 +456,12 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     onChange(next);
     setSelected(null);
   };
+  // An explicit stockpile is a real unit (remove it); an auto product pile is
+  // derived, so remove it by disconnecting its feeders.
+  const removePileNode = (pileNodeKey: string) => {
+    if (plant.units.some((u) => u.id === pileNodeKey && u.kind === 'pile')) { onChange(removeUnit(plant, pileNodeKey)); setSelected(null); }
+    else deletePile(pileNodeKey);
+  };
 
   // Delete / Backspace removes the selected link or pile (unless you're typing).
   useEffect(() => {
@@ -457,7 +475,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         setSelected(null);
       } else if (selected?.kind === 'pile') {
         ev.preventDefault();
-        deletePile(selected.id);
+        removePileNode(selected.id);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -508,6 +526,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary" onClick={() => addAt('screen')}>+ Screen</button>
         <button className="secondary" onClick={() => addAt('crusher')}>+ Crusher</button>
         <button className="secondary" onClick={addFeedAt}>+ Feed</button>
+        <button className="secondary" onClick={addPileAt}>+ Pile</button>
         <span className="fs-tb-gap" />
         <button className="secondary fs-zoom" onClick={() => zoom(1 / 1.2)} title="Zoom in" aria-label="zoom in">+</button>
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
@@ -628,19 +647,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             return <line className="fs-temp-edge" x1={a.x} y1={a.y} x2={tempEnd.x} y2={tempEnd.y} markerEnd="url(#fs-arrow)" />;
           })()}
 
-          {/* pile nodes — draggable like unit boxes; click to select, ✕ to delete */}
-          {result.piles.map((p) => {
-            const key = `pile:${p.key}`;
-            const q = posD.get(key)!;
-            const sel = selected?.kind === 'pile' && selected.id === key;
+          {/* pile nodes — auto product piles + explicit stockpiles; draggable,
+              click to select, ✕ to delete */}
+          {[
+            ...result.piles.filter((p) => !p.key.startsWith('pileunit:')).map((p) => ({ nodeKey: `pile:${p.key}`, name: p.product, tph: p.stream.tph })),
+            ...plant.units.filter((u) => u.kind === 'pile').map((u) => ({ nodeKey: u.id, name: u.name, tph: result.piles.find((p) => p.key === `pileunit:${u.id}`)?.stream.tph ?? 0 })),
+          ].map((pn) => {
+            const q = posD.get(pn.nodeKey);
+            if (!q) return null;
+            const sel = selected?.kind === 'pile' && selected.id === pn.nodeKey;
             return (
-              <g key={p.key} transform={`translate(${q.x} ${q.y})`} style={{ cursor: 'grab' }} onPointerDown={(e) => onNodeDown(e, key)}>
+              <g key={pn.nodeKey} transform={`translate(${q.x} ${q.y})`} style={{ cursor: 'grab' }} onPointerDown={(e) => onNodeDown(e, pn.nodeKey)}>
                 <rect x={0} y={4} width={W} height={H - 4} rx={12} fill="transparent" stroke={sel ? '#d9480f' : 'none'} strokeWidth={sel ? 2 : 0} strokeDasharray="4 3" />
                 <g transform={`translate(${W / 2} 34)`} style={{ pointerEvents: 'none' }}>{symbol('stockpile', 3)}</g>
-                <text x={W / 2} y={66} className="fs-node-name" textAnchor="middle" style={{ pointerEvents: 'none' }}>{p.product}</text>
-                <text x={W / 2} y={80} className="fs-node-sub" textAnchor="middle" style={{ pointerEvents: 'none' }}>{round(p.stream.tph)} tph</text>
+                <text x={W / 2} y={66} className="fs-node-name" textAnchor="middle" style={{ pointerEvents: 'none' }}>{pn.name}</text>
+                <text x={W / 2} y={80} className="fs-node-sub" textAnchor="middle" style={{ pointerEvents: 'none' }}>{round(pn.tph)} tph</text>
                 {sel && (
-                  <g transform={`translate(${W - 6} 8)`} style={{ cursor: 'pointer' }} onPointerDown={(ev) => { ev.stopPropagation(); deletePile(key); }}>
+                  <g transform={`translate(${W - 6} 8)`} style={{ cursor: 'pointer' }} onPointerDown={(ev) => { ev.stopPropagation(); removePileNode(pn.nodeKey); }}>
                     <circle r={9} fill="#fff" stroke="#d9480f" strokeWidth={1.5} />
                     <text className="fs-x" textAnchor="middle" y={3.5}>✕</text>
                   </g>
@@ -649,8 +672,9 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             );
           })}
 
-          {/* unit nodes */}
+          {/* unit nodes (piles are rendered above) */}
           {plant.units.map((u) => {
+            if (u.kind === 'pile') return null;
             const q = posD.get(u.id)!;
             const n = nodeById.get(u.id);
             const bad = (n?.kind === 'screen' && !n.result.ok) || (n?.kind === 'crusher' && n.overCapacity);

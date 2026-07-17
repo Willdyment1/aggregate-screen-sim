@@ -47,6 +47,7 @@ export function PlantDiagram({ plant, result, compact }: { plant: Plant; result:
     if (u.kind === 'crusher') {
       return fan(u.out, n && n.kind === 'crusher' ? n.output.tph : 0, 'out', 'crushed');
     }
+    if (u.kind !== 'screen') return []; // pile: a sink, no outputs
     const outs: OutRoute[] = u.decks.flatMap((d, di) =>
       fan(u.deckTargets[di] ?? [{ to: PILE, frac: 1 }], n && n.kind === 'screen' ? n.result.products[di]?.stream.tph ?? 0 : 0, `deck-${di}`, `+${sieveLabel(d.aperture)}`),
     );

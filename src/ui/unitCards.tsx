@@ -3,7 +3,7 @@
 // give it the plant + an onChange, and it applies plantOps internally.
 import { useEffect, useState } from 'react';
 import type { OpeningShape } from '../model/types';
-import type { Plant, PlantFeed, PlantScreen, PlantCrusher, Target, Split, CrusherType } from '../model/plant';
+import type { Plant, PlantUnit, PlantFeed, PlantScreen, PlantCrusher, PlantPile, Target, Split, CrusherType } from '../model/plant';
 import { PILE, targetOptions } from '../model/plant';
 import { setUnit, setDeck, addDeck, removeDeck, removeUnit, duplicateUnit } from '../model/plantOps';
 import type { PlantNode } from '../engine/plant';
@@ -270,8 +270,23 @@ export function CrusherCard({ plant, u, node, onChange, showRoute = true }: { pl
 }
 
 /** Render the right editor card for any unit. */
-export function UnitCard({ plant, u, node, onChange, showRoute }: { plant: Plant; u: PlantScreen | PlantCrusher | PlantFeed; node?: PlantNode; onChange: (p: Plant) => void; showRoute?: boolean }) {
+export function PileCard({ plant, u, onChange }: { plant: Plant; u: PlantPile; onChange: (p: Plant) => void }) {
+  return (
+    <div className="plant-unit pile-unit">
+      <div className="plant-unit-h">
+        <span className="unit-kind">Stockpile</span>
+        <input className="unit-name" value={u.name} onChange={(e) => onChange(setUnit(plant, u.id, { name: e.target.value }))} />
+        <button className="link-btn unit-dup" onClick={() => onChange(duplicateUnit(plant, u.id).plant)} title="Duplicate" aria-label="duplicate pile">⧉</button>
+        <button className="link-btn" onClick={() => onChange(removeUnit(plant, u.id))} aria-label="remove pile">✕</button>
+      </div>
+      <div className="plant-input">A stockpile — every output routed into it combines here. Wire decks to it on the Flowsheet, or pick it in a “sends to” dropdown.</div>
+    </div>
+  );
+}
+
+export function UnitCard({ plant, u, node, onChange, showRoute }: { plant: Plant; u: PlantUnit; node?: PlantNode; onChange: (p: Plant) => void; showRoute?: boolean }) {
   if (u.kind === 'feed') return <FeedCard plant={plant} u={u} onChange={onChange} showRoute={showRoute} />;
   if (u.kind === 'screen') return <ScreenCard plant={plant} u={u} node={node} onChange={onChange} showRoute={showRoute} />;
+  if (u.kind === 'pile') return <PileCard plant={plant} u={u} onChange={onChange} />;
   return <CrusherCard plant={plant} u={u} node={node} onChange={onChange} showRoute={showRoute} />;
 }

@@ -75,7 +75,15 @@ export interface PlantCrusher {
   out: Split;
 }
 
-export type PlantUnit = PlantFeed | PlantScreen | PlantCrusher;
+/** An explicit product stockpile — a routable sink. Several outputs can be
+ *  wired into the same pile so their material combines in it. */
+export interface PlantPile {
+  id: string;
+  kind: 'pile';
+  name: string;
+}
+
+export type PlantUnit = PlantFeed | PlantScreen | PlantCrusher | PlantPile;
 
 export interface Plant {
   units: PlantUnit[];
@@ -119,6 +127,7 @@ export function migratePlant(raw: unknown): Plant {
       while (dt.length < decks.length) dt.push([{ to: PILE, frac: 1 }]);
       return { ...u, deckTargets: dt, underTarget: toSplit(u.underTarget) } as PlantUnit;
     }
+    if (u.kind === 'pile') return { id: u.id, kind: 'pile', name: u.name } as PlantUnit;
     return u as unknown as PlantUnit;
   });
   const layout = r.layout && typeof r.layout === 'object' ? (r.layout as Plant['layout']) : {};

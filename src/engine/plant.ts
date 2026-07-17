@@ -123,6 +123,8 @@ export function simulatePlant(plant: Plant): PlantResult {
   const feeds = plant.units.filter((u): u is Extract<Plant['units'][number], { kind: 'feed' }> => u.kind === 'feed');
   const screens = plant.units.filter((u): u is PlantScreen => u.kind === 'screen');
   const crushers = plant.units.filter((u): u is PlantCrusher => u.kind === 'crusher');
+  const pileUnits = plant.units.filter((u) => u.kind === 'pile');
+  const pileUnitById = new Map(pileUnits.map((u) => [u.id, u]));
   const totalFeed = feeds.reduce((s, f) => s + f.tph, 0) || 1;
   const density = feeds[0]?.bulkDensity ?? 100;
   const wet = feeds[0]?.wet ?? false;
@@ -189,7 +191,12 @@ export function simulatePlant(plant: Plant): PlantResult {
   const nodes: PlantNode[] = [];
   const rawPiles: Pile[] = [];
   const toPile = (label: string, product: string, key: string, fromUnit: string) => (target: Target, stream: Stream) => {
-    if (target !== MERGE && (target === PILE || !byId.has(target)) && stream.tph > 0.001) rawPiles.push({ fromUnit, label, product, key, stream });
+    if (target === MERGE || stream.tph <= 0.001) return;
+    // Routed to an explicit stockpile → collect under that pile's identity (so
+    // several outputs into one pile combine); otherwise it's an auto product pile.
+    const pu = pileUnitById.get(target);
+    if (pu) { rawPiles.push({ fromUnit, label: pu.name, product: pu.name, key: `pileunit:${pu.id}`, stream }); return; }
+    if (target === PILE || !byId.has(target)) rawPiles.push({ fromUnit, label, product, key, stream });
   };
 
   for (const u of plant.units) {
@@ -200,7 +207,7 @@ export function simulatePlant(plant: Plant): PlantResult {
       const result = processScreen(input, u.decks, { width: u.width, length: u.length, travelRate: u.travelRate }, { ...opts, bulkDensity: input.density ?? opts.bulkDensity, targetEfficiency: u.targetEfficiency });
       nodes.push({ kind: 'screen', id: u.id, name: u.name, input, result });
       screenOutputs(u, result, u.name, input.density).forEach((o) => send(o.routes, o.stream, toPile(o.label, o.product, o.key, u.id)));
-    } else {
+    } else if (u.kind === 'crusher') {
       const input = inputs.get(u.id) ?? EMPTY;
       const output: Stream = { tph: input.tph, gradation: crusherProduct(u.css, input.gradation, u.crusherType), density: input.density };
       const feedTop = Math.max(0, ...input.gradation.map((p) => p.size));
@@ -219,7 +226,14 @@ export function simulatePlant(plant: Plant): PlantResult {
   const piles: Pile[] = [];
   groups.forEach((g) => {
     if (g.length === 1) piles.push(g[0]);
+    // An explicit stockpile keeps its own name; auto-piles that merge get "(combined)".
+    else if (g[0].key.startsWith('pileunit:')) piles.push({ fromUnit: 'combined', key: g[0].key, product: g[0].product, label: g[0].product, stream: blend(g.map((x) => x.stream)) });
     else piles.push({ fromUnit: 'combined', key: g[0].key, product: g[0].product, label: `${g[0].product} (combined)`, stream: blend(g.map((x) => x.stream)) });
+  });
+  // Empty explicit stockpiles still appear so they can be wired into.
+  pileUnits.forEach((pu) => {
+    const key = `pileunit:${pu.id}`;
+    if (!piles.some((p) => p.key === key)) piles.push({ fromUnit: pu.id, key, product: pu.name, label: pu.name, stream: EMPTY });
   });
 
   return { nodes, piles, feedTph: totalFeed, runaway, iterations };

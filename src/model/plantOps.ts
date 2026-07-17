@@ -2,7 +2,7 @@
 // so both edit the one plant identically. Every op returns a fresh, name-normalised
 // plant; callers just do `onChange(op(plant, ...))`.
 import type { Deck } from './types';
-import { PILE, MERGE, one, normalizeNames, type Plant, type PlantUnit, type PlantFeed, type PlantScreen, type PlantCrusher, type Split, type Target } from './plant';
+import { PILE, MERGE, one, normalizeNames, type Plant, type PlantUnit, type PlantFeed, type PlantScreen, type PlantCrusher, type PlantPile, type Split, type Target } from './plant';
 import { STANDARD_SIEVES } from './sieves';
 import { FEED_PRESETS } from './feedPresets';
 
@@ -18,6 +18,7 @@ export const newScreen = (n: number): PlantScreen => ({
   decks: [{ aperture: 19, openAreaPct: 61, openingShape: 'square' }], deckTargets: [one(PILE)], underTarget: one(PILE),
 });
 export const newCrusher = (n: number): PlantCrusher => ({ id: uid(), kind: 'crusher', name: `Crusher ${n}`, crusherType: 'cone', css: 13, capacity: 200, out: one(PILE) });
+export const newPile = (n: number): PlantPile => ({ id: uid(), kind: 'pile', name: n <= 1 ? 'Stockpile' : `Stockpile ${n}` });
 
 const isPile = (s: Split) => s.length === 1 && s[0].to === PILE;
 /** A port set to fold into a sibling output (see MERGE). */
@@ -90,6 +91,14 @@ export function addFeed(plant: Plant, pos?: { x: number; y: number }): { plant: 
   return { plant: normalizeNames({ ...plant, units: [...plant.units, nf], layout }), id: nf.id };
 }
 
+/** Add a standalone stockpile — wire outputs into it (several may share one). */
+export function addPile(plant: Plant, pos?: { x: number; y: number }): { plant: Plant; id: string } {
+  const n = plant.units.filter((u) => u.kind === 'pile').length + 1;
+  const np = newPile(n);
+  const layout = pos ? { ...(plant.layout ?? {}), [np.id]: pos } : plant.layout;
+  return { plant: normalizeNames({ ...plant, units: [...plant.units, np], layout }), id: np.id };
+}
+
 /** Duplicate a unit: a copy with a new id, its outputs reset to a product pile,
  *  named "<name> copy", inserted right after the original (offset on the flowsheet). */
 export function duplicateUnit(plant: Plant, id: string): { plant: Plant; id: string } {
@@ -100,6 +109,7 @@ export function duplicateUnit(plant: Plant, id: string): { plant: Plant; id: str
   let copy: PlantUnit;
   if (u.kind === 'feed') copy = { ...u, id: newId, name, out: one(PILE) };
   else if (u.kind === 'screen') copy = { ...u, id: newId, name, auto: false, decks: u.decks.map((d) => ({ ...d })), deckTargets: u.decks.map(() => one(PILE)), underTarget: one(PILE) };
+  else if (u.kind === 'pile') copy = { id: newId, kind: 'pile', name };
   else copy = { ...u, id: newId, name, auto: false, out: one(PILE) };
 
   const layout = { ...(plant.layout ?? {}) };
@@ -125,6 +135,7 @@ export function removeUnit(plant: Plant, id: string): Plant {
       .map((u) => {
         if (u.kind === 'feed') return { ...u, out: repoint(u.out) };
         if (u.kind === 'crusher') return { ...u, out: repoint(u.out) };
+        if (u.kind === 'pile') return u;
         return { ...u, underTarget: repoint(u.underTarget), deckTargets: u.deckTargets.map(repoint) };
       }),
   });
@@ -140,14 +151,16 @@ export function clearLayout(plant: Plant): Plant {
 
 // --- routing ports (used by the flowsheet's drag-to-connect) -----------------
 
-/** Output port ids for a unit: 'out' | 'under' | `deck:<i>`. */
+/** Output port ids for a unit: 'out' | 'under' | `deck:<i>`. A pile is a sink. */
 export function portsOf(u: PlantUnit): string[] {
+  if (u.kind === 'pile') return [];
   if (u.kind === 'feed' || u.kind === 'crusher') return ['out'];
   return [...u.decks.map((_, i) => `deck:${i}`), 'under'];
 }
 
 const getPort = (u: PlantUnit, port: string): Split => {
   if (u.kind === 'feed' || u.kind === 'crusher') return u.out;
+  if (u.kind !== 'screen') return []; // pile: no output ports
   if (port === 'under') return u.underTarget;
   const i = Number(port.split(':')[1]);
   return u.deckTargets[i] ?? one(PILE);
@@ -155,6 +168,7 @@ const getPort = (u: PlantUnit, port: string): Split => {
 
 const withPort = (u: PlantUnit, port: string, routes: Split): PlantUnit => {
   if (u.kind === 'feed' || u.kind === 'crusher') return { ...u, out: routes };
+  if (u.kind !== 'screen') return u; // pile: no output ports
   if (port === 'under') return { ...u, underTarget: routes };
   const i = Number(port.split(':')[1]);
   return { ...u, deckTargets: u.deckTargets.map((x, j) => (j === i ? routes : x)) };

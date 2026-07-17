@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import type { Plant } from '../model/plant';
-import { addUnit, addFeed } from '../model/plantOps';
+import { addUnit, addFeed, addPile } from '../model/plantOps';
 import type { PlantResult } from '../engine/plant';
 import { sizeAtPassing } from '../engine/gradation';
-import { FeedCard, ScreenCard, CrusherCard } from './unitCards';
+import { FeedCard, ScreenCard, CrusherCard, PileCard } from './unitCards';
 
 const round = (n: number) => (Number.isFinite(n) ? Math.round(n) : '—');
 const mm = (n: number) => (Number.isFinite(n) ? (n < 1 ? n.toFixed(2) : n.toFixed(1)) : '—');
@@ -33,6 +33,8 @@ export function PlantPanel({ plant, result, onChange }: { plant: Plant; result: 
             <div className="plant-arrow">▼</div>
             {u.kind === 'screen' ? (
               <ScreenCard plant={plant} u={u} node={nodeById.get(u.id)} onChange={onChange} />
+            ) : u.kind === 'pile' ? (
+              <PileCard plant={plant} u={u} onChange={onChange} />
             ) : (
               <CrusherCard plant={plant} u={u} node={nodeById.get(u.id)} onChange={onChange} />
             )}
@@ -45,6 +47,7 @@ export function PlantPanel({ plant, result, onChange }: { plant: Plant; result: 
         <button className="secondary" onClick={() => onChange(addUnit(plant, 'screen').plant)}>+ Add screen</button>
         <button className="secondary" onClick={() => onChange(addUnit(plant, 'crusher').plant)}>+ Add crusher</button>
         <button className="secondary" onClick={() => onChange(addFeed(plant).plant)}>+ Add feed</button>
+        <button className="secondary" onClick={() => onChange(addPile(plant).plant)}>+ Add stockpile</button>
       </div>
 
       {result.runaway && (
