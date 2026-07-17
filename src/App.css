@@ -2348,6 +2348,23 @@
   flex: 1 1 220px;
   min-width: 0;
 }
+.fs-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 1.1rem;
+  padding: 0.4rem 0.2rem 0.2rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.fs-leg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.fs-leg-item svg {
+  flex: 0 0 auto;
+}
 .fs-body {
   display: flex;
   gap: 0.6rem;

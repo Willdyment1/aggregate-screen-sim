@@ -491,7 +491,26 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it — a lone stream folds into the unit's other output (dashed “merged”) so the tonnage is kept</span>
+        <span className="fs-hint">Drag boxes to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link then ✕ (or press Delete) to remove it</span>
+      </div>
+
+      <div className="fs-legend">
+        <span className="fs-leg-item">
+          <svg width="30" height="12" aria-hidden="true"><line x1="1" y1="6" x2="22" y2="6" stroke="#9aa4b0" strokeWidth="1.6" /><path d="M22,3 L29,6 L22,9 z" fill="#9aa4b0" /></svg>
+          flow
+        </span>
+        <span className="fs-leg-item">
+          <svg width="30" height="12" aria-hidden="true"><path d="M8,3 L1,6 L8,9 z" fill="#dc2626" /><line x1="7" y1="6" x2="23" y2="6" stroke="#dc2626" strokeWidth="2" /><path d="M22,3 L29,6 L22,9 z" fill="#dc2626" /></svg>
+          returns to the same machine
+        </span>
+        <span className="fs-leg-item">
+          <svg width="30" height="12" aria-hidden="true"><line x1="1" y1="6" x2="22" y2="6" stroke="#b58bd8" strokeWidth="1.6" strokeDasharray="4 3" /><path d="M22,3 L29,6 L22,9 z" fill="#b58bd8" /></svg>
+          recycle loop
+        </span>
+        <span className="fs-leg-item">
+          <svg width="30" height="12" aria-hidden="true"><path d="M2,10 C 14,10 14,2 26,2" fill="none" stroke="#b58bd8" strokeWidth="1.6" strokeDasharray="4 3" /></svg>
+          merged into another output
+        </span>
       </div>
 
       <div className="fs-body">
@@ -507,9 +526,9 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             <marker id="fs-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#9aa4b0" />
             </marker>
-            {/* Bigger red head for two-way (recirculation) arrows so the back arrow
-                reads clearly even next to the blue port dots. */}
-            <marker id="fs-arrow-2w" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+            {/* Red head for two-way (recirculation) arrows — colour, not size,
+                sets them apart (see the legend). */}
+            <marker id="fs-arrow-2w" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#dc2626" />
             </marker>
           </defs>
@@ -529,7 +548,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                   onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, from: delFrom, port: delPort, target: delTarget }); }} />
                 <path d={d} fill="none"
                   stroke={back ? (on ? '#b91c1c' : '#dc2626') : on ? '#d9480f' : e.recycle ? '#b58bd8' : '#9aa4b0'}
-                  strokeWidth={back ? (on ? 3.2 : 2.6) : on ? 2.4 : 1.6}
+                  strokeWidth={back ? (on ? 2.6 : 2) : on ? 2.4 : 1.6}
                   strokeDasharray={e.recycle && !back ? '5 4' : undefined}
                   markerEnd={back ? 'url(#fs-arrow-2w)' : 'url(#fs-arrow)'} markerStart={back ? 'url(#fs-arrow-2w)' : undefined} />
                 {e.tph > 0.5 && <text x={midx} y={back ? midy - 9 : e.recycle ? recycleDip(e) - 8 : midy - 3} className="fs-edge-label" textAnchor="middle" fill={back ? '#dc2626' : undefined}>{round(e.tph)} tph</text>}
