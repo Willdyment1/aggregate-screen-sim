@@ -197,6 +197,9 @@ export function connect(plant: Plant, unitId: string, port: string, target: Targ
 export function disconnect(plant: Plant, unitId: string, port: string, target: Target): Plant {
   const u = plant.units.find((x) => x.id === unitId);
   if (!u) return plant;
+  // Deleting the fold itself caps the port (drops the stream) — otherwise it
+  // would immediately re-fold and look undeletable.
+  if (target === MERGE) return setPort(plant, unitId, port, []);
   const kept = getPort(u, port).filter((r) => r.to !== target);
   if (!kept.length) {
     const hasSink = portsOf(u).some((p) => p !== port && getPort(u, p).length > 0 && !isMergeSplit(getPort(u, p)));

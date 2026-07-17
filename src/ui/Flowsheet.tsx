@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Plant, PlantUnit, Split } from '../model/plant';
-import { PILE } from '../model/plant';
+import { PILE, MERGE } from '../model/plant';
 import { addUnit, addFeed, setLayout, clearLayout, connect, disconnect, portsOf, mergeSinkPort, isMergeSplit } from '../model/plantOps';
 import type { PlantResult } from '../engine/plant';
 import { sieveLabel } from '../model/sieves';
@@ -234,6 +234,15 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   }, [structureKey, fitNonce, bounds]);
   const [selected, setSelected] = useState<{ kind: 'unit' | 'edge'; id: string; from?: string; port?: string; target?: string } | null>(null);
   const [tempEnd, setTempEnd] = useState<Pos | null>(null);
+  // While a box is being dragged we only move it locally (no plant edit, so no
+  // re-simulation) and commit once on release — keeps dragging smooth on big plants.
+  const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
+  const posD = useMemo(() => {
+    if (!dragPos) return pos;
+    const m = new Map(pos);
+    m.set(dragPos.id, { x: dragPos.x, y: dragPos.y });
+    return m;
+  }, [pos, dragPos]);
   const drag = useRef<
     | { mode: 'pan'; sx: number; sy: number; vx: number; vy: number }
     | { mode: 'node'; id: string; ox: number; oy: number; moved: boolean }
@@ -299,7 +308,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     } else if (d.mode === 'node') {
       const w = toWorld(e.clientX, e.clientY);
       d.moved = true;
-      onChange(setLayout(plant, d.id, { x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) }));
+      setDragPos({ id: d.id, x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) });
     } else if (d.mode === 'connect') {
       setTempEnd(toWorld(e.clientX, e.clientY));
     }
@@ -308,7 +317,11 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    if (d.mode === 'node' && !d.moved) {
+    if (d.mode === 'node' && d.moved) {
+      const w = toWorld(e.clientX, e.clientY);
+      onChange(setLayout(plant, d.id, { x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) }));
+      setDragPos(null);
+    } else if (d.mode === 'node' && !d.moved) {
       setSelected({ kind: 'unit', id: d.id });
     } else if (d.mode === 'connect') {
       const w = toWorld(e.clientX, e.clientY);
@@ -342,7 +355,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   };
   // Output ports fan down the right edge of a box; each output has its own anchor.
   const anchorRight = (id: string, k: number, total: number): Pos => {
-    const q = pos.get(id)!;
+    const q = posD.get(id)!;
     return { x: q.x + W, y: q.y + 18 + (total > 1 ? (k * (H - 30)) / (total - 1) : (H - 30) / 2) };
   };
   // First collect links with just their source anchor; the target anchor is set
@@ -360,9 +373,9 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         const tph = portTotal(u, port) * (r.frac / sum);
         const toUnit = r.to !== PILE && plant.units.some((x) => x.id === r.to);
         const node = toUnit ? r.to : `pile:${portKey(u, port)}`;
-        if (!pos.has(node)) return;
+        if (!posD.has(node)) return;
         // A link back to a unit at or left of the source is a recycle loop.
-        const recycle = toUnit && pos.get(r.to)!.x <= pos.get(u.id)!.x;
+        const recycle = toUnit && posD.get(r.to)!.x <= posD.get(u.id)!.x;
         raw.push({ id: `${u.id}|${port}|${r.to}`, from: u.id, port, toKey: r.to, node, a, tph, recycle });
       });
     });
@@ -373,7 +386,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   const byTarget = new Map<string, Raw[]>();
   raw.forEach((e) => (byTarget.get(e.node) ?? byTarget.set(e.node, []).get(e.node)!).push(e));
   byTarget.forEach((list, node) => {
-    const q = pos.get(node)!;
+    const q = posD.get(node)!;
     list.sort((p, r) => p.a.y - r.a.y);
     list.forEach((e, i) => {
       const by = q.y + 18 + (list.length > 1 ? (i * (H - 36)) / (list.length - 1) : (H - 36) / 2);
@@ -406,7 +419,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   const recycleDip = (e: Edge): number => {
     const loX = Math.min(e.a.x, e.b.x), hiX = Math.max(e.a.x, e.b.x);
     let clear = Math.max(e.a.y, e.b.y);
-    pos.forEach((p) => { if (p.x + W > loX && p.x < hiX) clear = Math.max(clear, p.y + H); });
+    posD.forEach((p) => { if (p.x + W > loX && p.x < hiX) clear = Math.max(clear, p.y + H); });
     return clear + 46;
   };
   // Forward edges: horizontal tangents off the right output into the target's left
@@ -481,10 +494,22 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
               const a = anchorRight(u.id, ports.indexOf(port), ports.length);
               const b = anchorRight(u.id, ports.indexOf(sink), ports.length);
               const mx = Math.max(a.x, b.x) + 30;
+              const d = `M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
+              const fid = `${u.id}|${port}|merge`;
+              const on = selected?.kind === 'edge' && selected.id === fid;
               return (
                 <g key={`fold-${u.id}-${port}`}>
-                  <path d={`M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`} fill="none" stroke="#b58bd8" strokeWidth={1.4} strokeDasharray="4 3" />
+                  <path d={d} fill="none" stroke="transparent" strokeWidth={12} style={{ cursor: 'pointer' }}
+                    onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: fid, from: u.id, port, target: MERGE }); }} />
+                  <path d={d} fill="none" stroke={on ? '#d9480f' : '#b58bd8'} strokeWidth={on ? 2.2 : 1.4} strokeDasharray="4 3" />
                   <text x={mx + 4} y={(a.y + b.y) / 2 + 3} className="fs-edge-label">merged</text>
+                  {on && (
+                    <g transform={`translate(${mx} ${(a.y + b.y) / 2})`} style={{ cursor: 'pointer' }}
+                      onPointerDown={(ev) => { ev.stopPropagation(); onChange(disconnect(plant, u.id, port, MERGE)); setSelected(null); }}>
+                      <circle r={9} fill="#fff" stroke="#d9480f" strokeWidth={1.5} />
+                      <text className="fs-x" textAnchor="middle" y={3.5}>✕</text>
+                    </g>
+                  )}
                 </g>
               );
             });
@@ -501,7 +526,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
 
           {/* pile nodes */}
           {result.piles.map((p) => {
-            const q = pos.get(`pile:${p.key}`)!;
+            const q = posD.get(`pile:${p.key}`)!;
             return (
               <g key={p.key} transform={`translate(${q.x} ${q.y})`}>
                 <g transform={`translate(${W / 2} 34)`}>{symbol('stockpile', 3)}</g>
@@ -513,7 +538,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
 
           {/* unit nodes */}
           {plant.units.map((u) => {
-            const q = pos.get(u.id)!;
+            const q = posD.get(u.id)!;
             const n = nodeById.get(u.id);
             const bad = (n?.kind === 'screen' && !n.result.ok) || (n?.kind === 'crusher' && n.overCapacity);
             const sel = selected?.kind === 'unit' && selected.id === u.id;
