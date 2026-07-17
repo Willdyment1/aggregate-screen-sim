@@ -310,6 +310,35 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     }
     return null;
   };
+  // Hit-test an *auto* product pile node (returns its key), so dropping an output
+  // onto it can fold that pile into a shared stockpile.
+  const autoPileAt = (p: Pos): string | null => {
+    for (const pile of result.piles) {
+      if (pile.key.startsWith('pileunit:')) continue;
+      const q = pos.get(`pile:${pile.key}`);
+      if (q && p.x >= q.x && p.x <= q.x + W && p.y >= q.y && p.y <= q.y + H) return pile.key;
+    }
+    return null;
+  };
+  // Drop an output onto an auto pile → create a stockpile at that spot and route
+  // that pile's existing feeders *and* the new output into it, so they combine.
+  const adoptAutoPile = (autoKey: string, srcUnit: string, srcPort: string) => {
+    const made = addPile(plant); // auto-position it (so it doesn't overlap the pile it replaced)
+    let next = made.plant;
+    plant.units.forEach((u) => {
+      portsOf(u).forEach((port) => {
+        if (`pile:${portKey(u, port)}` !== `pile:${autoKey}`) return;
+        routesOfPort(u, port).forEach((r) => {
+          const toUnit = r.to !== PILE && plant.units.some((x) => x.id === r.to);
+          if (r.frac > 0 && r.to !== MERGE && !toUnit) next = connect(next, u.id, port, made.id);
+        });
+      });
+    });
+    next = connect(next, srcUnit, srcPort, made.id);
+    onChange(next);
+    setSelected({ kind: 'pile', id: made.id });
+    setFitNonce((n) => n + 1);
+  };
 
   const onPointerDownBg = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -361,10 +390,12 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
       setSelected(isPileNode ? { kind: 'pile', id: d.id } : { kind: 'unit', id: d.id });
     } else if (d.mode === 'connect') {
       const w = toWorld(e.clientX, e.clientY);
-      const hit = unitAt(w);
-      const target = hit && hit !== d.id ? hit : PILE;
-      onChange(connect(plant, d.id, d.port, target));
       setTempEnd(null);
+      const hit = unitAt(w);
+      if (hit && hit !== d.id) { onChange(connect(plant, d.id, d.port, hit)); return; } // onto a box or stockpile
+      const autoKey = autoPileAt(w);
+      if (autoKey) adoptAutoPile(autoKey, d.id, d.port); // onto an auto pile → combine into a stockpile
+      else onChange(connect(plant, d.id, d.port, PILE)); // empty space → its own product pile
     }
   };
 
@@ -532,7 +563,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes and piles to arrange · drag a ● output to another box (or empty space = pile) to wire it · click a box to edit · click a link or pile then ✕ (or press Delete) to remove it</span>
+        <span className="fs-hint">Drag boxes and piles to arrange · drag a ● output onto a box, a pile (to combine outputs), or empty space (a new pile) · click a box to edit · click a link or pile then ✕ (or Delete) to remove it</span>
       </div>
 
       <div className="fs-legend">
