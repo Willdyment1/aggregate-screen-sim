@@ -189,11 +189,39 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     }
 
     const COLW = W + 108;
-    let minY = Infinity;
-    y.forEach((v) => (minY = Math.min(minY, v)));
-    if (!Number.isFinite(minY)) minY = 0;
+    const PX = (k: string) => 40 + nodeCol.get(k)! * COLW; // pre-pack x from the column
+
+    // Split into connected components; keep the biggest (the main flow) in place
+    // and pack the rest into a tidy grid below it. Otherwise a batch of unattached
+    // units piles into one long strip and Fit has to zoom way out to show it.
+    const keys = [...nodeCol.keys()];
+    const parent = new Map(keys.map((k) => [k, k]));
+    const find = (a: string): string => { while (parent.get(a) !== a) { parent.set(a, parent.get(parent.get(a)!)!); a = parent.get(a)!; } return a; };
+    links.forEach((l) => { const ra = find(l.u), rb = find(l.t); if (ra !== rb) parent.set(ra, rb); });
+    const groups = new Map<string, string[]>();
+    keys.forEach((k) => (groups.get(find(k)) ?? groups.set(find(k), []).get(find(k))!).push(k));
+    const comps = [...groups.values()].sort((a, b) => b.length - a.length);
+    const bbox = (ks: string[]) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      ks.forEach((k) => { const x = PX(k), yy = y.get(k)!; x0 = Math.min(x0, x); y0 = Math.min(y0, yy); x1 = Math.max(x1, x + W); y1 = Math.max(y1, yy + H); });
+      return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+    };
+    const tr = new Map<string, { dx: number; dy: number }>();
+    const GAP = 60;
+    const mb = comps.length ? bbox(comps[0]) : { x0: 0, y0: 0, w: 0, h: 0 };
+    comps[0]?.forEach((k) => tr.set(k, { dx: 40 - mb.x0, dy: 40 - mb.y0 })); // main → origin (40,40)
+    let rowX = 40, rowY = 40 + mb.h + GAP, rowH = 0;
+    const budget = Math.max(mb.w, 900);
+    for (let i = 1; i < comps.length; i++) {
+      const cb = bbox(comps[i]);
+      if (rowX > 40 && rowX + cb.w > 40 + budget) { rowX = 40; rowY += rowH + GAP; rowH = 0; }
+      const dx = rowX - cb.x0, dy = rowY - cb.y0;
+      comps[i].forEach((k) => tr.set(k, { dx, dy }));
+      rowX += cb.w + GAP; rowH = Math.max(rowH, cb.h);
+    }
+
     const m = new Map<string, Pos>();
-    const setPos = (k: string) => m.set(k, layout[k] ?? { x: 40 + nodeCol.get(k)! * COLW, y: Math.round(40 + (y.get(k)! - minY)) });
+    const setPos = (k: string) => { const t = tr.get(k) ?? { dx: 0, dy: 0 }; m.set(k, layout[k] ?? { x: Math.round(PX(k) + t.dx), y: Math.round(y.get(k)! + t.dy) }); };
     plant.units.forEach((u) => setPos(u.id));
     result.piles.forEach((p) => setPos(`pile:${p.key}`));
     return m;
