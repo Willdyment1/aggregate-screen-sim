@@ -3,6 +3,7 @@ import type { Plant, PlantUnit, Split } from '../model/plant';
 import { PILE, MERGE } from '../model/plant';
 import { addUnit, addFeed, addPile, removeUnit, setLayout, clearLayout, connect, disconnect, portsOf, mergeSinkPort, isMergeSplit } from '../model/plantOps';
 import type { PlantResult } from '../engine/plant';
+import { sizeAtPassing } from '../engine/gradation';
 import { sieveLabel } from '../model/sieves';
 import { symbol, STROKE } from './equipment';
 import { UnitCard } from './unitCards';
@@ -267,6 +268,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   }, [structureKey, fitNonce, bounds]);
   const [selected, setSelected] = useState<{ kind: 'unit' | 'edge' | 'pile'; id: string; from?: string; port?: string; target?: string } | null>(null);
   const [tempEnd, setTempEnd] = useState<Pos | null>(null);
+  // Right-click "add equipment" menu (screen position + world drop point).
+  const [menu, setMenu] = useState<{ sx: number; sy: number; w: Pos } | null>(null);
   // While a box is being dragged we only move it locally (no plant edit, so no
   // re-simulation) and commit once on release — keeps dragging smooth on big plants.
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -342,9 +345,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
 
   const onPointerDownBg = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (menu) { setMenu(null); return; }
     drag.current = { mode: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
     setSelected(null);
     svgRef.current?.setPointerCapture(e.pointerId);
+  };
+  // Right-click anywhere on the canvas → menu to drop a new unit at that spot.
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const w = toWorld(e.clientX, e.clientY);
+    setMenu({ sx: e.clientX, sy: e.clientY, w: { x: Math.round(w.x - W / 2), y: Math.round(w.y - H / 2) } });
+  };
+  const addFromMenu = (kind: 'screen' | 'crusher' | 'feed' | 'pile') => {
+    if (!menu) return;
+    const res = kind === 'feed' ? addFeed(plant, menu.w) : kind === 'pile' ? addPile(plant, menu.w) : addUnit(plant, kind, menu.w);
+    onChange(res.plant);
+    setSelected(kind === 'pile' ? { kind: 'pile', id: res.id } : { kind: 'unit', id: res.id });
+    setMenu(null);
   };
   const onNodeDown = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
@@ -417,7 +434,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   };
 
   // --- edges ------------------------------------------------------------------
-  type Edge = { id: string; from: string; port: string; toKey: string; a: Pos; b: Pos; tph: number; recycle: boolean };
+  type Edge = { id: string; from: string; port: string; toKey: string; a: Pos; b: Pos; srcBottom?: boolean; tph: number; recycle: boolean };
   const portTotal = (u: PlantUnit, port: string): number => {
     const n = nodeById.get(u.id);
     if (u.kind === 'feed') return u.tph;
@@ -425,21 +442,28 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     if (n && n.kind === 'screen') return port === 'under' ? n.result.undersize.tph : n.result.products[Number(port.split(':')[1])]?.stream.tph ?? 0;
     return 0;
   };
-  // Output ports fan down the right edge of a box; each output has its own anchor.
-  const anchorRight = (id: string, k: number, total: number): Pos => {
-    const q = posD.get(id)!;
-    return { x: q.x + W, y: q.y + 18 + (total > 1 ? (k * (H - 30)) / (total - 1) : (H - 30) / 2) };
+  // Ports that leave the *right* edge (everything except a screen's undersize).
+  const rightPortsOf = (u: PlantUnit): string[] => portsOf(u).filter((p) => !(u.kind === 'screen' && p === 'under'));
+  // Anchor for an output port: right-edge fan, except a screen's undersize (what
+  // passes *through* the deck) sits at the bottom of the box.
+  const portAnchor = (u: PlantUnit, port: string): Pos & { bottom: boolean } => {
+    const q = posD.get(u.id)!;
+    if (u.kind === 'screen' && port === 'under') return { x: q.x + W / 2, y: q.y + H, bottom: true };
+    const rp = rightPortsOf(u);
+    const k = Math.max(0, rp.indexOf(port));
+    const total = rp.length;
+    return { x: q.x + W, y: q.y + 18 + (total > 1 ? (k * (H - 30)) / (total - 1) : (H - 30) / 2), bottom: false };
   };
   // First collect links with just their source anchor; the target anchor is set
   // afterwards so several links into one box fan across its left face.
-  type Raw = { id: string; from: string; port: string; toKey: string; node: string; a: Pos; tph: number; recycle: boolean };
+  type Raw = { id: string; from: string; port: string; toKey: string; node: string; a: Pos; srcBottom: boolean; tph: number; recycle: boolean };
   const raw: Raw[] = [];
   plant.units.forEach((u) => {
     const ports = portsOf(u);
-    ports.forEach((port, k) => {
+    ports.forEach((port) => {
       const routes = routesOfPort(u, port);
       const sum = routes.reduce((a, r) => a + (r.frac > 0 ? r.frac : 0), 0) || 1;
-      const a = anchorRight(u.id, k, ports.length);
+      const a = portAnchor(u, port);
       routes.forEach((r) => {
         if (r.frac <= 0) return;
         const tph = portTotal(u, port) * (r.frac / sum);
@@ -448,7 +472,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         if (!posD.has(node)) return;
         // A link back to a unit at or left of the source is a recycle loop.
         const recycle = toUnit && posD.get(r.to)!.x <= posD.get(u.id)!.x;
-        raw.push({ id: `${u.id}|${port}|${r.to}`, from: u.id, port, toKey: r.to, node, a, tph, recycle });
+        raw.push({ id: `${u.id}|${port}|${r.to}`, from: u.id, port, toKey: r.to, node, a, srcBottom: a.bottom, tph, recycle });
       });
     });
   });
@@ -462,12 +486,31 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     list.sort((p, r) => p.a.y - r.a.y);
     list.forEach((e, i) => {
       const by = q.y + 18 + (list.length > 1 ? (i * (H - 36)) / (list.length - 1) : (H - 36) / 2);
-      edges.push({ id: e.id, from: e.from, port: e.port, toKey: e.toKey, a: e.a, b: { x: q.x, y: by }, tph: e.tph, recycle: e.recycle });
+      edges.push({ id: e.id, from: e.from, port: e.port, toKey: e.toKey, a: e.a, b: { x: q.x, y: by }, srcBottom: e.srcBottom, tph: e.tph, recycle: e.recycle });
     });
   });
 
   const selUnit = selected?.kind === 'unit' ? plant.units.find((u): u is Exclude<PlantUnit, { kind: 'pile' }> => u.id === selected.id && u.kind !== 'pile') : undefined;
   if (selected?.kind === 'unit' && !selUnit) setSelected(null); // unit was deleted
+
+  // Selected pile → its result data + which outputs feed it, for the info panel.
+  const selPileExplicit = selected?.kind === 'pile' && plant.units.some((u) => u.id === selected.id && u.kind === 'pile');
+  const selPileKey = selected?.kind === 'pile' ? (selPileExplicit ? `pileunit:${selected.id}` : selected.id.replace(/^pile:/, '')) : null;
+  const selPile = selPileKey ? result.piles.find((p) => p.key === selPileKey) ?? null : null;
+  const pileFeeders = selPile
+    ? plant.units.flatMap((u) =>
+        portsOf(u).flatMap((port) => {
+          const routes = routesOfPort(u, port);
+          const sum = routes.reduce((a, r) => a + (r.frac > 0 ? r.frac : 0), 0) || 1;
+          return routes.flatMap((r) => {
+            if (r.frac <= 0 || r.to === MERGE) return [];
+            const targetPile = plant.units.find((x) => x.id === r.to && x.kind === 'pile');
+            const feeds = targetPile ? `pileunit:${targetPile.id}` === selPile.key : (r.to === PILE || !plant.units.some((x) => x.id === r.to)) && portKey(u, port) === selPile.key;
+            return feeds ? [{ name: u.name, label: portLabel(u, port), tph: portTotal(u, port) * (r.frac / sum) }] : [];
+          });
+        }),
+      )
+    : [];
 
   // Delete a product pile: disconnect every output route that feeds it (each such
   // port then caps or folds), so the pile disappears.
@@ -524,6 +567,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   // A plain output→target S-curve (horizontal tangents at both ends).
   const straight = (e: Edge) => {
     const k = Math.max(28, Math.min(110, Math.abs(e.b.x - e.a.x) * 0.5));
+    // An undersize link leaves the bottom of the screen going down, then curves out.
+    if (e.srcBottom) return `M ${e.a.x} ${e.a.y} C ${e.a.x} ${e.a.y + 46}, ${e.b.x - k} ${e.b.y}, ${e.b.x} ${e.b.y}`;
     return `M ${e.a.x} ${e.a.y} C ${e.a.x + k} ${e.a.y}, ${e.b.x - k} ${e.b.y}, ${e.b.x} ${e.b.y}`;
   };
   // Forward edges use the S-curve. A recycle edge drops into the return lane and
@@ -593,6 +638,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
           onPointerDown={onPointerDownBg}
           onPointerMove={onMove}
           onPointerUp={onUp}
+          onContextMenu={onContextMenu}
         >
           <defs>
             <marker id="fs-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -645,8 +691,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             const ports = portsOf(u);
             return ports.map((port) => {
               if (!isMergeSplit(routesOfPort(u, port))) return null;
-              const a = anchorRight(u.id, ports.indexOf(port), ports.length);
-              const b = anchorRight(u.id, ports.indexOf(sink), ports.length);
+              const a = portAnchor(u, port);
+              const b = portAnchor(u, sink);
               const mx = Math.max(a.x, b.x) + 30;
               const d = `M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
               const fid = `${u.id}|${port}|merge`;
@@ -673,8 +719,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             const dc = drag.current;
             const u = plant.units.find((x) => x.id === dc.id);
             if (!u) return null;
-            const ports = portsOf(u);
-            const a = anchorRight(u.id, ports.indexOf(dc.port), ports.length);
+            const a = portAnchor(u, dc.port);
             return <line className="fs-temp-edge" x1={a.x} y1={a.y} x2={tempEnd.x} y2={tempEnd.y} markerEnd="url(#fs-arrow)" />;
           })()}
 
@@ -723,13 +768,16 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                 </g>
                 <text x={W / 2} y={66} className="fs-node-name" textAnchor="middle" style={{ pointerEvents: 'none' }}>{u.name}</text>
                 <text x={W / 2} y={80} className="fs-node-sub" textAnchor="middle" style={{ pointerEvents: 'none' }} fill={bad ? STROKE.crusher : undefined}>{sub}</text>
-                {/* output ports on the right edge */}
-                {ports.map((port, k) => {
-                  const py = 18 + (ports.length > 1 ? (k * (H - 30)) / (ports.length - 1) : (H - 30) / 2);
+                {/* output ports: right edge, but a screen's undersize sits at the bottom */}
+                {ports.map((port) => {
+                  const bottom = u.kind === 'screen' && port === 'under';
+                  const rp = rightPortsOf(u);
+                  const cx = bottom ? W / 2 : W;
+                  const cy = bottom ? H : 18 + (rp.length > 1 ? (rp.indexOf(port) * (H - 30)) / (rp.length - 1) : (H - 30) / 2);
                   return (
                     <g key={port} style={{ cursor: 'crosshair' }} onPointerDown={(e) => onPortDown(e, u.id, port)}>
-                      <circle className="fs-port" cx={W} cy={py} r={5} />
-                      <title>{portLabel(u, port)} →</title>
+                      <circle className="fs-port" cx={cx} cy={cy} r={5} />
+                      <title>{portLabel(u, port)} {bottom ? '↓' : '→'}</title>
                     </g>
                   );
                 })}
@@ -747,7 +795,54 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
             <UnitCard plant={plant} u={selUnit} node={nodeById.get(selUnit.id)} onChange={onChange} />
           </aside>
         )}
+
+        {selPile && (() => {
+          const g = selPile.stream.gradation;
+          const top = g.length ? Math.max(...g.map((x) => x.size)) : 0;
+          const p80 = g.length ? sizeAtPassing(g, 80) : 0;
+          const fmt = (n: number) => (!Number.isFinite(n) || n <= 0 ? '—' : n < 1 ? n.toFixed(2) : n.toFixed(1));
+          return (
+            <aside className="fs-inspector">
+              <div className="fs-insp-head">
+                <strong>{selPileExplicit ? 'Stockpile' : 'Product pile'}</strong>
+                <button className="link-btn" onClick={() => setSelected(null)}>close ✕</button>
+              </div>
+              <div className="pile-info">
+                <div className="pile-info-name">{selPile.product}</div>
+                <dl className="pile-info-dl">
+                  <div><dt>Tonnage</dt><dd>{round(selPile.stream.tph)} tph</dd></div>
+                  <div><dt>% of feed</dt><dd>{result.feedTph ? ((selPile.stream.tph / result.feedTph) * 100).toFixed(1) : '0'}%</dd></div>
+                  <div><dt>Top size</dt><dd>{fmt(top)} mm</dd></div>
+                  <div><dt>P80</dt><dd>{fmt(p80)} mm</dd></div>
+                  {selPile.stream.density != null && <div><dt>Bulk density</dt><dd>{round(selPile.stream.density)} lb/ft³</dd></div>}
+                </dl>
+                <div className="pile-feeders">
+                  <div className="pile-feeders-h">Fed by</div>
+                  {pileFeeders.length ? (
+                    <ul>{pileFeeders.map((f, i) => (<li key={i}><span>{f.name} · {f.label}</span><span className="num">{round(f.tph)} tph</span></li>))}</ul>
+                  ) : (
+                    <p className="muted">Nothing routed here yet — drag a box output onto this pile.</p>
+                  )}
+                </div>
+                <button className="secondary danger" onClick={() => removePileNode(selected!.id)}>{selPileExplicit ? 'Remove stockpile' : 'Remove pile'}</button>
+              </div>
+            </aside>
+          );
+        })()}
       </div>
+
+      {menu && (
+        <>
+          <div className="fs-menu-backdrop" onPointerDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
+          <div className="fs-menu" style={{ left: Math.min(menu.sx, window.innerWidth - 180), top: Math.min(menu.sy, window.innerHeight - 170) }}>
+            <div className="fs-menu-h">Add equipment</div>
+            <button onClick={() => addFromMenu('feed')}>Feed</button>
+            <button onClick={() => addFromMenu('screen')}>Screen</button>
+            <button onClick={() => addFromMenu('crusher')}>Crusher</button>
+            <button onClick={() => addFromMenu('pile')}>Stockpile</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
