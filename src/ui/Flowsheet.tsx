@@ -200,14 +200,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   }, [plant, result]);
 
   const bounds = useMemo((): Box => {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, floor = -Infinity;
     pos.forEach((p) => {
       x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
       x1 = Math.max(x1, p.x + W); y1 = Math.max(y1, p.y + H);
+      floor = Math.max(floor, p.y + H);
     });
     if (!Number.isFinite(x0)) return { x: 0, y: 0, w: 600, h: 400 };
+    // Recycle links route through a channel below the boxes — reserve room for it.
+    const hasRecycle = plant.units.some((u) => {
+      const su = pos.get(u.id);
+      if (!su) return false;
+      const outs = u.kind === 'feed' || u.kind === 'crusher' ? u.out.map((r) => r.to) : [...u.deckTargets.flatMap((dt) => dt.map((r) => r.to)), ...u.underTarget.map((r) => r.to)];
+      return outs.some((t) => { const tp = pos.get(t); return tp && tp.x <= su.x; });
+    });
+    if (hasRecycle) y1 = Math.max(y1, floor + 70);
     return { x: x0 - 40, y: y0 - 40, w: x1 - x0 + 80, h: y1 - y0 + 80 };
-  }, [pos]);
+  }, [pos, plant]);
 
   const [view, setView] = useState<Box>(bounds);
   const [fitNonce, setFitNonce] = useState(0);
@@ -392,12 +401,20 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     return () => window.removeEventListener('keydown', onKey);
   }, [selected, plant, onChange]);
 
-  // Clean node-editor edges: horizontal tangents off the right output into the
-  // target's left face. Recycle loops bow downward so they read as a return line.
+  // A recycle link returns through a lane *below* every box it spans, so it never
+  // cuts across the forward flows between the source and its target.
+  const recycleDip = (e: Edge): number => {
+    const loX = Math.min(e.a.x, e.b.x), hiX = Math.max(e.a.x, e.b.x);
+    let clear = Math.max(e.a.y, e.b.y);
+    pos.forEach((p) => { if (p.x + W > loX && p.x < hiX) clear = Math.max(clear, p.y + H); });
+    return clear + 46;
+  };
+  // Forward edges: horizontal tangents off the right output into the target's left
+  // face. Recycle edges drop into the return lane and rise back into the target.
   const edgePath = (e: Edge) => {
     if (e.recycle) {
-      const bow = 60 + Math.abs(e.a.y - e.b.y) * 0.15;
-      return `M ${e.a.x} ${e.a.y} C ${e.a.x + 44} ${e.a.y + bow}, ${e.b.x - 44} ${e.b.y + bow}, ${e.b.x} ${e.b.y}`;
+      const dip = recycleDip(e);
+      return `M ${e.a.x} ${e.a.y} C ${e.a.x + 50} ${dip}, ${e.b.x - 50} ${dip}, ${e.b.x} ${e.b.y}`;
     }
     const k = Math.max(28, Math.min(110, Math.abs(e.b.x - e.a.x) * 0.5));
     return `M ${e.a.x} ${e.a.y} C ${e.a.x + k} ${e.a.y}, ${e.b.x - k} ${e.b.y}, ${e.b.x} ${e.b.y}`;
@@ -440,7 +457,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                   onPointerDown={(ev) => { ev.stopPropagation(); setSelected({ kind: 'edge', id: e.id, from: e.from, port: e.port, target: e.toKey }); }} />
                 <path d={edgePath(e)} fill="none" stroke={on ? '#d9480f' : e.recycle ? '#b58bd8' : '#9aa4b0'} strokeWidth={on ? 2.4 : 1.6}
                   strokeDasharray={e.recycle ? '5 4' : undefined} markerEnd="url(#fs-arrow)" />
-                {e.tph > 0.5 && <text x={(e.a.x + e.b.x) / 2} y={(e.a.y + e.b.y) / 2 - 3 + (e.recycle ? 42 : 0)} className="fs-edge-label" textAnchor="middle">{round(e.tph)} tph</text>}
+                {e.tph > 0.5 && <text x={(e.a.x + e.b.x) / 2} y={e.recycle ? recycleDip(e) - 8 : (e.a.y + e.b.y) / 2 - 3} className="fs-edge-label" textAnchor="middle">{round(e.tph)} tph</text>}
                 {on && (
                   <g transform={`translate(${(e.a.x + e.b.x) / 2} ${(e.a.y + e.b.y) / 2})`} style={{ cursor: 'pointer' }}
                     onPointerDown={(ev) => { ev.stopPropagation(); onChange(disconnect(plant, e.from, e.port, e.toKey)); setSelected(null); }}>
