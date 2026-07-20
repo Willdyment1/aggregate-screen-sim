@@ -16,6 +16,8 @@ export interface StreamCurve extends Curve {
 const PRODUCT_PALETTE = ['#e8622c', '#2c7be8', '#1f9d55', '#8a4fce', '#c9a227', '#0f9b9b', '#d1478a', '#7a5c2e', '#5b6bb0', '#4f8f2f'];
 const FEED_COLORS = ['#555', '#8a5a2b', '#2b6b8a', '#6a3d8a'];
 const CRUSHER_PALETTE = ['#b0341d', '#d9640f', '#8a2d5a', '#9a5b1a'];
+// Combined stockpiles: dark, solid — read as the plant's final products.
+const PILE_PALETTE = ['#12203f', '#5c2d91', '#0b6e4f', '#7a1f3d'];
 
 /** A stream is worth plotting only if it carries real tonnage and enough points. */
 const drawable = (g: { length: number }, tph: number) => tph > 0.5 && g.length > 1;
@@ -52,6 +54,15 @@ export function buildPlantCurves(plant: Plant, result: PlantResult): StreamCurve
     } else if (n.kind === 'crusher' && drawable(n.output.gradation, n.output.tph)) {
       cs.push({ key: `${n.id}-p`, label: `${n.name} product`, color: CRUSHER_PALETTE[cri++ % CRUSHER_PALETTE.length], dashed: true, gradation: n.output.gradation, tph: n.output.tph });
     }
+  });
+
+  // Combined stockpiles blend several streams, so their gradation isn't shown by
+  // the individual stream curves above — plot those final products (dark, solid).
+  let pli = 0;
+  result.piles.forEach((p) => {
+    const combined = p.key.startsWith('pileunit:') || p.fromUnit === 'combined';
+    if (!combined || !drawable(p.stream.gradation, p.stream.tph)) return;
+    cs.push({ key: `pile:${p.key}`, label: `${p.product} pile`, color: PILE_PALETTE[pli++ % PILE_PALETTE.length], gradation: p.stream.gradation, tph: p.stream.tph });
   });
   return cs;
 }

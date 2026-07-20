@@ -2465,6 +2465,27 @@
   color: var(--muted);
   font-size: 0.82rem;
 }
+.pile-grad-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.pile-grad-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding: 0.18rem 0.2rem;
+  border-bottom: 1px solid var(--line);
+}
+.pile-grad-table td {
+  padding: 0.18rem 0.2rem;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.pile-grad-table .num {
+  text-align: right;
+}
 .fs-body {
   display: flex;
   gap: 0.6rem;

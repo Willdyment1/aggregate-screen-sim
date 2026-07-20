@@ -824,6 +824,19 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                     <p className="muted">Nothing routed here yet — drag a box output onto this pile.</p>
                   )}
                 </div>
+                {g.length > 1 && (
+                  <div className="pile-grad">
+                    <div className="pile-feeders-h">Gradation</div>
+                    <table className="pile-grad-table">
+                      <thead><tr><th>Size</th><th className="num">% passing</th></tr></thead>
+                      <tbody>
+                        {[...g].sort((a, b) => b.size - a.size).map((pt, i) => (
+                          <tr key={i}><td>{fmt(pt.size)} mm</td><td className="num">{pt.percentPassing.toFixed(1)}%</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 <button className="secondary danger" onClick={() => removePileNode(selected!.id)}>{selPileExplicit ? 'Remove stockpile' : 'Remove pile'}</button>
               </div>
             </aside>
