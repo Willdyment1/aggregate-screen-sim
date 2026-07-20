@@ -67,6 +67,18 @@ export function topSize(g: Gradation): number {
   return top;
 }
 
+/**
+ * Fineness modulus: the sum of the cumulative percent RETAINED on the standard
+ * FM sieve series (150 µm … 150 mm) divided by 100. The one-number coarseness
+ * index used to grade fine aggregate — concrete sand runs FM ≈ 2.3–3.1 (ASTM C33).
+ */
+const FM_SIEVES = [0.15, 0.3, 0.6, 1.18, 2.36, 4.75, 9.5, 19, 37.5, 75, 150];
+export function finenessModulus(g: Gradation): number {
+  if (!g.length) return 0;
+  const retained = FM_SIEVES.reduce((s, mm) => s + (100 - percentPassing(g, mm)), 0);
+  return retained / 100;
+}
+
 export function sizeAtPassing(g: Gradation, pct: number): number {
   const pts = normalizeGradation(g); // descending size => descending %passing
   if (pts.length === 0) return 0;

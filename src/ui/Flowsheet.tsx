@@ -3,7 +3,7 @@ import type { Plant, PlantUnit, Split } from '../model/plant';
 import { PILE, MERGE } from '../model/plant';
 import { addUnit, addFeed, addPile, removeUnit, setLayout, clearLayout, connect, disconnect, portsOf, mergeSinkPort, isMergeSplit } from '../model/plantOps';
 import type { PlantResult } from '../engine/plant';
-import { sizeAtPassing } from '../engine/gradation';
+import { sizeAtPassing, percentPassing, finenessModulus } from '../engine/gradation';
 import { sieveLabel } from '../model/sieves';
 import { symbol, STROKE } from './equipment';
 import { UnitCard } from './unitCards';
@@ -274,6 +274,10 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   // re-simulation) and commit once on release — keeps dragging smooth on big plants.
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
   const [help, setHelp] = useState(false);
+  // Pile gradation can be read two ways: "Composition" (how much sits in each size
+  // band — good for understanding the pile) or "% passing" (cumulative — the form
+  // product specs are written against). Let the user flip between them.
+  const [pileTable, setPileTable] = useState<'composition' | 'passing'>('composition');
   const posD = useMemo(() => {
     if (!dragPos) return pos;
     const m = new Map(pos);
@@ -901,6 +905,21 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
           }
           const finest = rows[rows.length - 1];
           if (finest && finest.percentPassing > 0.05) bands.push({ label: `< ${fmt(finest.size)} mm`, pct: finest.percentPassing });
+
+          // Product readout — what a QC/sales reader (not a plant designer) wants.
+          const fm = g.length ? finenessModulus(g) : 0;
+          const p200 = g.length ? percentPassing(g, 0.075) : 0; // fines / dust (#200)
+          const p4 = g.length ? percentPassing(g, 4.75) : 0; // sand-sized fraction
+          const dust = p200 > 10 ? 'high' : p200 > 7 ? 'elevated' : null;
+          const classify = () => {
+            if (top <= 0 || !g.length) return '—';
+            if (p4 >= 85) {
+              const grade = fm < 2.3 ? 'Fine sand' : fm <= 3.1 ? 'Medium (concrete) sand' : 'Coarse sand';
+              return dust ? `${grade}, ${dust} fines` : grade;
+            }
+            if (p4 >= 40) return `${fmt(top)} mm-minus crusher/screen fines`;
+            return `${fmt(top)} mm-minus stone`;
+          };
           return (
             <aside className="fs-inspector">
               <div className="fs-insp-head">
@@ -909,13 +928,19 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
               </div>
               <div className="pile-info">
                 <div className="pile-info-name">{selPile.product}</div>
+                {g.length > 0 && <div className="pile-class">{classify()}</div>}
                 <dl className="pile-info-dl">
                   <div><dt>Tonnage</dt><dd>{round(selPile.stream.tph)} tph</dd></div>
                   <div><dt>% of feed</dt><dd>{result.feedTph ? ((selPile.stream.tph / result.feedTph) * 100).toFixed(1) : '0'}%</dd></div>
                   <div><dt>Top size</dt><dd>{fmt(top)} mm</dd></div>
                   <div><dt>P80</dt><dd>{fmt(p80)} mm</dd></div>
+                  <div><dt>Fineness mod.</dt><dd>{g.length ? fm.toFixed(2) : '—'}</dd></div>
+                  <div><dt title="Percent passing the #200 sieve — the dust/fines fraction">Fines &lt;0.075</dt><dd className={dust ? 'pile-warn-val' : ''}>{g.length ? `${p200.toFixed(1)}%` : '—'}</dd></div>
                   {selPile.stream.density != null && <div><dt>Bulk density</dt><dd>{round(selPile.stream.density)} lb/ft³</dd></div>}
                 </dl>
+                {dust && (
+                  <p className="pile-flag">⚠ {p200.toFixed(1)}% passes the #200 sieve — {dust} dust. Concrete sand (ASTM C33) allows ~3–7%; this pile likely needs washing or reblending for a spec sand.</p>
+                )}
                 <div className="pile-feeders">
                   <div className="pile-feeders-h">Fed by</div>
                   {pileFeeders.length ? (
@@ -926,15 +951,35 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                 </div>
                 {bands.length > 0 && (
                   <div className="pile-grad">
-                    <div className="pile-feeders-h">Size breakdown <span className="muted">(% of pile in each band)</span></div>
-                    <table className="pile-grad-table">
-                      <thead><tr><th>Size band</th><th className="num">% of pile</th></tr></thead>
-                      <tbody>
-                        {bands.map((b, i) => (
-                          <tr key={i}><td>{b.label}</td><td className="num">{b.pct.toFixed(1)}%</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="pile-feeders-h">
+                      Gradation
+                      <span className="pile-grad-toggle" role="group" aria-label="gradation view">
+                        <button type="button" className={pileTable === 'composition' ? 'on' : ''} onClick={() => setPileTable('composition')}>Composition</button>
+                        <button type="button" className={pileTable === 'passing' ? 'on' : ''} onClick={() => setPileTable('passing')}>% passing</button>
+                      </span>
+                    </div>
+                    {pileTable === 'composition' ? (
+                      <table className="pile-grad-table">
+                        <thead><tr><th>Size band</th><th className="num">% of pile</th></tr></thead>
+                        <tbody>
+                          {bands.map((b, i) => (
+                            <tr key={i}><td>{b.label}</td><td className="num">{b.pct.toFixed(1)}%</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <table className="pile-grad-table">
+                        <thead><tr><th>Sieve</th><th className="num">% passing</th></tr></thead>
+                        <tbody>
+                          {rows.map((pt, i) => (
+                            <tr key={i}><td>{sieveLabel(pt.size)} <span className="muted">({fmt(pt.size)} mm)</span></td><td className="num">{pt.percentPassing.toFixed(1)}%</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    <p className="pile-grad-note">
+                      {pileTable === 'composition' ? 'How much of the pile sits in each size band (sums to 100%).' : 'Cumulative % finer than each sieve — the form product specs are written against.'}
+                    </p>
                   </div>
                 )}
                 <button className="secondary danger" onClick={() => removePileNode(selected!.id)}>{selPileExplicit ? 'Remove stockpile' : 'Remove pile'}</button>

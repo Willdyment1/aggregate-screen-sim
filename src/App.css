@@ -2554,6 +2554,52 @@
   color: var(--ink);
   font-size: 1.02rem;
 }
+.pile-class {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--brand, #0b4ea2);
+  margin: -0.15rem 0 0.1rem;
+}
+.pile-warn-val {
+  color: #b45309;
+}
+.pile-flag {
+  margin: 0.1rem 0 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #7c2d12;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+}
+.pile-grad-toggle {
+  float: right;
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.pile-grad-toggle button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+}
+.pile-grad-toggle button.on {
+  background: var(--brand, #0b4ea2);
+  color: #fff;
+}
+.pile-grad-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
 .pile-info-dl {
   display: grid;
   grid-template-columns: 1fr 1fr;

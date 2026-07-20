@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { percentPassing, percentOversize, percentHalfSize, sizeAtPassing, topSize } from './gradation';
+import { percentPassing, percentOversize, percentHalfSize, sizeAtPassing, topSize, finenessModulus } from './gradation';
 import { computeFactors, requiredArea, MM_PER_IN } from './vsma';
 import { idealSplit } from './separation';
 import { simulate } from './simulate';
@@ -73,6 +73,19 @@ describe('gradation math (mm)', () => {
     // A stream whose coarsest point already carries material keeps that as the top.
     expect(topSize([{ size: 50, percentPassing: 100 }, { size: 25, percentPassing: 23 }])).toBe(50);
     expect(topSize([{ size: 64, percentPassing: 80 }, { size: 20, percentPassing: 40 }])).toBe(64);
+  });
+  it('computes fineness modulus (sum of cumulative % retained on FM sieves / 100)', () => {
+    // All material finer than the finest FM sieve -> 0% retained everywhere -> FM 0.
+    expect(finenessModulus([{ size: 0.15, percentPassing: 100 }, { size: 0.075, percentPassing: 100 }])).toBeCloseTo(0, 5);
+    // Concrete-sand-ish gradation lands in the ASTM C33 FM window (2.3–3.1).
+    const sand = [
+      { size: 9.5, percentPassing: 100 }, { size: 4.75, percentPassing: 98 }, { size: 2.36, percentPassing: 82 },
+      { size: 1.18, percentPassing: 62 }, { size: 0.6, percentPassing: 42 }, { size: 0.3, percentPassing: 22 },
+      { size: 0.15, percentPassing: 8 }, { size: 0.075, percentPassing: 2 },
+    ];
+    const fm = finenessModulus(sand);
+    expect(fm).toBeGreaterThan(2.3);
+    expect(fm).toBeLessThan(3.1);
   });
   it('computes oversize and halfsize for Factors B and C', () => {
     expect(percentOversize(handbookFeed, inMm(1.0))).toBeCloseTo(15, 5);
