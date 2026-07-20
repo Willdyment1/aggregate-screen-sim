@@ -883,14 +883,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
           // cumulative % passing. Convert the (coarse→fine) cumulative curve into the
           // fraction of the pile between each adjacent pair of sieves, plus the fines
           // below the finest listed sieve. Drop empty bands to keep it tidy.
+          // Collapse sieve points within rounding distance of each other (e.g. the
+          // injected half-opening 2.375 mm sitting next to the 2.36 mm sieve) so we
+          // don't emit a degenerate "2.4 – 2.4 mm" band.
+          const rows: typeof gradRows = [];
+          for (const pt of gradRows) {
+            const prev = rows[rows.length - 1];
+            if (prev && Math.abs(Math.log(prev.size) - Math.log(pt.size)) < 0.03) continue;
+            rows.push(pt);
+          }
           const bands: { label: string; pct: number }[] = [];
-          for (let i = 0; i < gradRows.length - 1; i++) {
-            const hi = gradRows[i];
-            const lo = gradRows[i + 1];
+          for (let i = 0; i < rows.length - 1; i++) {
+            const hi = rows[i];
+            const lo = rows[i + 1];
             const pct = hi.percentPassing - lo.percentPassing;
             if (pct > 0.05) bands.push({ label: `${fmt(hi.size)} – ${fmt(lo.size)} mm`, pct });
           }
-          const finest = gradRows[gradRows.length - 1];
+          const finest = rows[rows.length - 1];
           if (finest && finest.percentPassing > 0.05) bands.push({ label: `< ${fmt(finest.size)} mm`, pct: finest.percentPassing });
           return (
             <aside className="fs-inspector">
