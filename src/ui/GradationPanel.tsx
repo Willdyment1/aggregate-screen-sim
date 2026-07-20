@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Plant } from '../model/plant';
 import type { PlantResult } from '../engine/plant';
 import { STANDARD_SIEVES, sieveLabel } from '../model/sieves';
-import { percentPassing, sizeAtPassing } from '../engine/gradation';
+import { percentPassing, sizeAtPassing, topSize } from '../engine/gradation';
 import { GradationChart } from './GradationChart';
 import { buildPlantCurves, type CurveCategory } from './gradationCurves';
 import { InfoTip } from './InfoTip';
@@ -134,7 +134,7 @@ export function GradationPanel({ plant, result }: Props) {
           <tbody>
             {visible.map((c) => {
               const g = c.gradation;
-              const top = g.length ? Math.max(...g.map((p) => p.size)) : 0;
+              const top = topSize(g);
               return (
                 <tr key={c.key}>
                   <td>

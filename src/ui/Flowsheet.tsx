@@ -870,7 +870,13 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
 
         {selPile && (() => {
           const g = selPile.stream.gradation;
-          const top = g.length ? Math.max(...g.map((x) => x.size)) : 0;
+          const sortedG = [...g].sort((a, b) => b.size - a.size); // coarse → fine
+          // True top size = the finest sieve that still passes ~100% (everything is
+          // below it). Coarser rows all read 100% passing (no material there), so we
+          // don't list them — they'd look like the pile holds oversize it doesn't.
+          let top = sortedG[0]?.size ?? 0;
+          for (const pt of sortedG) { if (pt.percentPassing >= 99.95) top = pt.size; else break; }
+          const gradRows = sortedG.filter((pt) => pt.size <= top + 1e-9);
           const p80 = g.length ? sizeAtPassing(g, 80) : 0;
           const fmt = (n: number) => (!Number.isFinite(n) || n <= 0 ? '—' : n < 1 ? n.toFixed(2) : n.toFixed(1));
           return (
@@ -896,13 +902,13 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                     <p className="muted">Nothing routed here yet — drag a box output onto this pile.</p>
                   )}
                 </div>
-                {g.length > 1 && (
+                {gradRows.length > 1 && (
                   <div className="pile-grad">
                     <div className="pile-feeders-h">Gradation</div>
                     <table className="pile-grad-table">
                       <thead><tr><th>Size</th><th className="num">% passing</th></tr></thead>
                       <tbody>
-                        {[...g].sort((a, b) => b.size - a.size).map((pt, i) => (
+                        {gradRows.map((pt, i) => (
                           <tr key={i}><td>{fmt(pt.size)} mm</td><td className="num">{pt.percentPassing.toFixed(1)}%</td></tr>
                         ))}
                       </tbody>

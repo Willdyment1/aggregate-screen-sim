@@ -56,6 +56,17 @@ export function percentRetained(g: Gradation, size: number): number {
  * Inverse of percentPassing: the sieve size at which `pct` percent passes (e.g.
  * P80, P50/median). Log-linear interpolation, mirroring percentPassing.
  */
+/** The largest particle size actually present: the finest sieve that still passes
+ *  ~100% (everything is below it). Avoids reporting a "top size" at a coarse point
+ *  that carries no material — e.g. a #4 undersize whose coarse rows all read 100%. */
+export function topSize(g: Gradation): number {
+  if (!g.length) return 0;
+  const sorted = [...g].sort((a, b) => b.size - a.size);
+  let top = sorted[0].size;
+  for (const pt of sorted) { if (pt.percentPassing >= 99.95) top = pt.size; else break; }
+  return top;
+}
+
 export function sizeAtPassing(g: Gradation, pct: number): number {
   const pts = normalizeGradation(g); // descending size => descending %passing
   if (pts.length === 0) return 0;

@@ -7,7 +7,7 @@ import { Flowsheet } from './ui/Flowsheet';
 import { PlantDatasheet } from './ui/PlantDatasheet';
 import { loadPlant, savePlant, defaultPlant, examplePlant, normalizeNames, migratePlant, type Plant } from './model/plant';
 import { simulatePlant } from './engine/plant';
-import { sizeAtPassing } from './engine/gradation';
+import { sizeAtPassing, topSize } from './engine/gradation';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { HowItWorks } from './ui/HowItWorks';
 import { AmrizeLogo, AmrizeMark } from './ui/AmrizeLogo';
@@ -140,7 +140,7 @@ export default function App() {
     const rows = [['Product', 'tph', '% of feed', 'Top size (mm)', 'P80 (mm)']];
     plantResult.piles.forEach((p) => {
       const g = p.stream.gradation;
-      const top = g.length ? Math.max(...g.map((x) => x.size)) : 0;
+      const top = topSize(g);
       const p80 = g.length ? sizeAtPassing(g, 80) : 0;
       rows.push([
         p.product,

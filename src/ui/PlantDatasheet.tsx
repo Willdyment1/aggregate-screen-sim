@@ -4,7 +4,7 @@
 import type { Plant, PlantScreen, PlantCrusher } from '../model/plant';
 import type { PlantResult } from '../engine/plant';
 import { plantMaxFeed } from '../engine/plantMaxFeed';
-import { sizeAtPassing } from '../engine/gradation';
+import { sizeAtPassing, topSize } from '../engine/gradation';
 import { sieveLabel } from '../model/sieves';
 import { matchPreset } from '../model/feedPresets';
 import { CRUSHER_SPECS } from '../engine/crusher';
@@ -110,7 +110,7 @@ export function PlantDatasheet({ plant, result, name, date }: { plant: Plant; re
                   <td className="num">{round(n.capacity)}</td>
                   <td className={`num ${n.overCapacity ? 'ds-bad' : ''}`}>{round(n.input.tph)} / {round(n.capacity)}</td>
                   <td className="num">{n.reductionRatio.toFixed(1)}:1</td>
-                  <td className="num">{mm(n.output.gradation.length ? Math.max(...n.output.gradation.map((g) => g.size)) : 0)} mm</td>
+                  <td className="num">{mm(topSize(n.output.gradation))} mm</td>
                   <td className="num">{mm(sizeAtPassing(n.output.gradation, 80))} mm</td>
                 </tr>
               </tbody>
@@ -124,7 +124,7 @@ export function PlantDatasheet({ plant, result, name, date }: { plant: Plant; re
         <thead><tr><th>Pile</th><th>tph</th><th>% of feed</th><th>Top (mm)</th><th>P80 (mm)</th></tr></thead>
         <tbody>
           {result.piles.map((p, i) => {
-            const top = p.stream.gradation.length ? Math.max(...p.stream.gradation.map((g) => g.size)) : 0;
+            const top = topSize(p.stream.gradation);
             return (
               <tr key={i}><td>{p.label}</td><td className="num">{round(p.stream.tph)}</td><td className="num">{pct1((p.stream.tph / (result.feedTph || 1)) * 100)}%</td><td className="num">{mm(top)}</td><td className="num">{mm(sizeAtPassing(p.stream.gradation, 80))}</td></tr>
             );

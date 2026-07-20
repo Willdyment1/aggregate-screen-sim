@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { percentPassing, percentOversize, percentHalfSize, sizeAtPassing } from './gradation';
+import { percentPassing, percentOversize, percentHalfSize, sizeAtPassing, topSize } from './gradation';
 import { computeFactors, requiredArea, MM_PER_IN } from './vsma';
 import { idealSplit } from './separation';
 import { simulate } from './simulate';
@@ -62,6 +62,17 @@ describe('gradation math (mm)', () => {
   it('returns exact values at sieve points', () => {
     expect(percentPassing(handbookFeed, inMm(1.0))).toBeCloseTo(85, 5);
     expect(percentPassing(handbookFeed, inMm(0.5))).toBeCloseTo(60, 5);
+  });
+  it('top size is the finest 100%-passing sieve, not a coarse point with no material', () => {
+    // A #4 undersize: 100% passing at 25/12.5/9.5, then drops — real top is 9.5, not 25.
+    const under = [
+      { size: 25, percentPassing: 100 }, { size: 12.5, percentPassing: 100 }, { size: 9.5, percentPassing: 100 },
+      { size: 4.75, percentPassing: 99.1 }, { size: 2, percentPassing: 67 }, { size: 0.075, percentPassing: 7 },
+    ];
+    expect(topSize(under)).toBe(9.5);
+    // A stream whose coarsest point already carries material keeps that as the top.
+    expect(topSize([{ size: 50, percentPassing: 100 }, { size: 25, percentPassing: 23 }])).toBe(50);
+    expect(topSize([{ size: 64, percentPassing: 80 }, { size: 20, percentPassing: 40 }])).toBe(64);
   });
   it('computes oversize and halfsize for Factors B and C', () => {
     expect(percentOversize(handbookFeed, inMm(1.0))).toBeCloseTo(15, 5);
