@@ -6,9 +6,12 @@ import type { PlantResult } from '../engine/plant';
 import { sieveLabel } from '../model/sieves';
 import type { Curve } from './GradationChart';
 
-/** A chart curve plus the stream tonnage it represents. */
+export type CurveCategory = 'feed' | 'screen' | 'crusher' | 'pile';
+
+/** A chart curve plus the stream tonnage it represents and its category. */
 export interface StreamCurve extends Curve {
   tph: number;
+  category: CurveCategory;
 }
 
 // A wide, distinct palette so busy plants don't reuse colours; after a full
@@ -27,7 +30,7 @@ export function buildPlantCurves(plant: Plant, result: PlantResult): StreamCurve
   const feeds = plant.units.filter((u) => u.kind === 'feed');
   feeds.forEach((f, i) => {
     if (f.kind !== 'feed') return;
-    cs.push({ key: `feed:${f.id}`, label: feeds.length > 1 ? f.name : 'Fresh feed', color: feeds.length > 1 ? FEED_COLORS[i % FEED_COLORS.length] : '#555', gradation: f.gradation, tph: f.tph });
+    cs.push({ key: `feed:${f.id}`, label: feeds.length > 1 ? f.name : 'Fresh feed', color: feeds.length > 1 ? FEED_COLORS[i % FEED_COLORS.length] : '#555', gradation: f.gradation, tph: f.tph, category: 'feed' });
   });
 
   let pi = 0;
@@ -45,24 +48,22 @@ export function buildPlantCurves(plant: Plant, result: PlantResult): StreamCurve
       n.result.products.forEach((p, di) => {
         if (!drawable(p.stream.gradation, p.stream.tph)) return;
         const c = nextProduct();
-        cs.push({ key: `${n.id}-d${di}`, label: `${prefix}Deck ${di + 1} (+${sieveLabel(p.aperture)})`, color: c.color, dashed: c.dashed, gradation: p.stream.gradation, tph: p.stream.tph });
+        cs.push({ key: `${n.id}-d${di}`, label: `${prefix}Deck ${di + 1} (+${sieveLabel(p.aperture)})`, color: c.color, dashed: c.dashed, gradation: p.stream.gradation, tph: p.stream.tph, category: 'screen' });
       });
       if (drawable(n.result.undersize.gradation, n.result.undersize.tph)) {
         const c = nextProduct();
-        cs.push({ key: `${n.id}-u`, label: `${prefix}undersize`, color: c.color, dashed: c.dashed, gradation: n.result.undersize.gradation, tph: n.result.undersize.tph });
+        cs.push({ key: `${n.id}-u`, label: `${prefix}undersize`, color: c.color, dashed: c.dashed, gradation: n.result.undersize.gradation, tph: n.result.undersize.tph, category: 'screen' });
       }
     } else if (n.kind === 'crusher' && drawable(n.output.gradation, n.output.tph)) {
-      cs.push({ key: `${n.id}-p`, label: `${n.name} product`, color: CRUSHER_PALETTE[cri++ % CRUSHER_PALETTE.length], dashed: true, gradation: n.output.gradation, tph: n.output.tph });
+      cs.push({ key: `${n.id}-p`, label: `${n.name} product`, color: CRUSHER_PALETTE[cri++ % CRUSHER_PALETTE.length], dashed: true, gradation: n.output.gradation, tph: n.output.tph, category: 'crusher' });
     }
   });
 
-  // Combined stockpiles blend several streams, so their gradation isn't shown by
-  // the individual stream curves above — plot those final products (dark, solid).
+  // Every product pile (the plant's final products), as dark solid curves.
   let pli = 0;
   result.piles.forEach((p) => {
-    const combined = p.key.startsWith('pileunit:') || p.fromUnit === 'combined';
-    if (!combined || !drawable(p.stream.gradation, p.stream.tph)) return;
-    cs.push({ key: `pile:${p.key}`, label: `${p.product} pile`, color: PILE_PALETTE[pli++ % PILE_PALETTE.length], gradation: p.stream.gradation, tph: p.stream.tph });
+    if (!drawable(p.stream.gradation, p.stream.tph)) return;
+    cs.push({ key: `pile:${p.key}`, label: p.product, color: PILE_PALETTE[pli++ % PILE_PALETTE.length], gradation: p.stream.gradation, tph: p.stream.tph, category: 'pile' });
   });
   return cs;
 }

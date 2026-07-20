@@ -24,7 +24,8 @@ export function PlantDatasheet({ plant, result, name, date }: { plant: Plant; re
   const overcap = crushers.filter((c) => c.kind === 'crusher' && c.overCapacity).length;
   const productTph = result.piles.reduce((s, p) => s + p.stream.tph, 0);
   const mf = plantMaxFeed(plant, result);
-  const curves = buildPlantCurves(plant, result);
+  // The datasheet shows the endpoints — feed + product piles — not intermediate streams.
+  const curves = buildPlantCurves(plant, result).filter((c) => c.category === 'feed' || c.category === 'pile');
   const status = result.runaway ? 'Runaway recycle loop' : overloaded || overcap ? `${[overloaded && `${overloaded} screen(s) overloaded`, overcap && `${overcap} crusher(s) over capacity`].filter(Boolean).join(', ')}` : 'All units within limits';
 
   return (

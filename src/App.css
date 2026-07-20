@@ -1707,6 +1707,33 @@
   color: var(--muted);
   line-height: 1.5;
 }
+.cat-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.7rem;
+}
+.cat-filter-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-right: 0.15rem;
+}
+.cat-chip {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.cat-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
 .design h3 {
   display: flex;
   align-items: center;

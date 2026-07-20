@@ -4,7 +4,7 @@ import type { PlantResult } from '../engine/plant';
 import { STANDARD_SIEVES, sieveLabel } from '../model/sieves';
 import { percentPassing, sizeAtPassing } from '../engine/gradation';
 import { GradationChart } from './GradationChart';
-import { buildPlantCurves } from './gradationCurves';
+import { buildPlantCurves, type CurveCategory } from './gradationCurves';
 import { InfoTip } from './InfoTip';
 
 interface Props {
@@ -24,8 +24,26 @@ export function GradationPanel({ plant, result }: Props) {
       next.has(k) ? next.delete(k) : next.add(k);
       return next;
     });
-  const visible = curves.filter((c) => !hidden.has(c.key));
-  const anyHidden = curves.some((c) => hidden.has(c.key));
+
+  // Category filter — default to the endpoints (feed + product piles); screen and
+  // crusher streams are intermediate, toggled on when you want to dig in.
+  const CATS: { id: CurveCategory; label: string }[] = [
+    { id: 'feed', label: 'Feeds' },
+    { id: 'pile', label: 'Product piles' },
+    { id: 'screen', label: 'Screen streams' },
+    { id: 'crusher', label: 'Crusher products' },
+  ];
+  const present = new Set(curves.map((c) => c.category));
+  const [activeCats, setActiveCats] = useState<Set<CurveCategory>>(new Set<CurveCategory>(['feed', 'pile']));
+  const toggleCat = (id: CurveCategory) =>
+    setActiveCats((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const catCurves = curves.filter((c) => activeCats.has(c.category));
+  const visible = catCurves.filter((c) => !hidden.has(c.key));
+  const anyHidden = catCurves.some((c) => hidden.has(c.key));
 
   // Deck-opening markers (unique apertures across every screen).
   const markers = useMemo(() => {
@@ -45,10 +63,23 @@ export function GradationPanel({ plant, result }: Props) {
     <section className="panel gradpanel">
       <h2>Gradation curves</h2>
       <p className="design-intro">
-        Every stream in the plant — fresh feed, each screen deck's oversize + undersize, and each crusher's
-        product. <strong>Click a line</strong> to select it, then move along it to read the sieve size and %
-        passing at any point (click empty space to deselect). Click a legend entry to hide / show a line.
+        The plant's gradations — the fresh <strong>feed</strong>, the final <strong>product piles</strong>, and
+        (toggle them on) the intermediate <strong>screen</strong> and <strong>crusher</strong> streams.
+        <strong> Click a line</strong> to read the sieve size and % passing at any point; click a legend entry to
+        hide / show it.
       </p>
+
+      <div className="cat-filter">
+        <span className="cat-filter-label">Show:</span>
+        {CATS.filter((c) => present.has(c.id)).map((c) => {
+          const on = activeCats.has(c.id);
+          return (
+            <button key={c.id} type="button" className={`cat-chip${on ? ' on' : ''}`} onClick={() => toggleCat(c.id)} aria-pressed={on}>
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="chart-scroll">
         <GradationChart curves={visible} markers={markers} width={640} height={380} />
@@ -58,12 +89,12 @@ export function GradationPanel({ plant, result }: Props) {
           Select all
         </button>
         <span className="legend-tools-sep">·</span>
-        <button className="link-btn" onClick={() => setHidden(new Set(curves.map((c) => c.key)))} disabled={visible.length === 0}>
+        <button className="link-btn" onClick={() => setHidden(new Set(catCurves.map((c) => c.key)))} disabled={visible.length === 0}>
           Deselect all
         </button>
       </div>
       <div className="legend">
-        {curves.map((c) => {
+        {catCurves.map((c) => {
           const off = hidden.has(c.key);
           return (
             <button
