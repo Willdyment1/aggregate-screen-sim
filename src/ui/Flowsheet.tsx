@@ -879,6 +879,19 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
           const gradRows = sortedG.filter((pt) => pt.size <= top + 1e-9);
           const p80 = g.length ? sizeAtPassing(g, 80) : 0;
           const fmt = (n: number) => (!Number.isFinite(n) || n <= 0 ? '—' : n < 1 ? n.toFixed(2) : n.toFixed(1));
+          // A pile is easier to read as "how much sits in each size band" than as a
+          // cumulative % passing. Convert the (coarse→fine) cumulative curve into the
+          // fraction of the pile between each adjacent pair of sieves, plus the fines
+          // below the finest listed sieve. Drop empty bands to keep it tidy.
+          const bands: { label: string; pct: number }[] = [];
+          for (let i = 0; i < gradRows.length - 1; i++) {
+            const hi = gradRows[i];
+            const lo = gradRows[i + 1];
+            const pct = hi.percentPassing - lo.percentPassing;
+            if (pct > 0.05) bands.push({ label: `${fmt(hi.size)} – ${fmt(lo.size)} mm`, pct });
+          }
+          const finest = gradRows[gradRows.length - 1];
+          if (finest && finest.percentPassing > 0.05) bands.push({ label: `< ${fmt(finest.size)} mm`, pct: finest.percentPassing });
           return (
             <aside className="fs-inspector">
               <div className="fs-insp-head">
@@ -902,14 +915,14 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                     <p className="muted">Nothing routed here yet — drag a box output onto this pile.</p>
                   )}
                 </div>
-                {gradRows.length > 1 && (
+                {bands.length > 0 && (
                   <div className="pile-grad">
-                    <div className="pile-feeders-h">Gradation</div>
+                    <div className="pile-feeders-h">Size breakdown <span className="muted">(% of pile in each band)</span></div>
                     <table className="pile-grad-table">
-                      <thead><tr><th>Size</th><th className="num">% passing</th></tr></thead>
+                      <thead><tr><th>Size band</th><th className="num">% of pile</th></tr></thead>
                       <tbody>
-                        {gradRows.map((pt, i) => (
-                          <tr key={i}><td>{fmt(pt.size)} mm</td><td className="num">{pt.percentPassing.toFixed(1)}%</td></tr>
+                        {bands.map((b, i) => (
+                          <tr key={i}><td>{b.label}</td><td className="num">{b.pct.toFixed(1)}%</td></tr>
                         ))}
                       </tbody>
                     </table>
