@@ -5,9 +5,11 @@ import { PlantPanel } from './ui/PlantPanel';
 import { PlantViewer } from './ui/PlantViewer';
 import { Flowsheet } from './ui/Flowsheet';
 import { PlantDatasheet } from './ui/PlantDatasheet';
-import { loadPlant, savePlant, defaultPlant, normalizeNames, migratePlant, type Plant } from './model/plant';
+import { loadPlant, savePlant, defaultPlant, examplePlant, normalizeNames, migratePlant, type Plant } from './model/plant';
 import { simulatePlant } from './engine/plant';
+import { sizeAtPassing } from './engine/gradation';
 import { ErrorBoundary } from './ui/ErrorBoundary';
+import { HowItWorks } from './ui/HowItWorks';
 import { AmrizeLogo, AmrizeMark } from './ui/AmrizeLogo';
 import './App.css';
 
@@ -112,10 +114,17 @@ export default function App() {
   // Everything downstream is derived from the plant.
   const plantResult = useMemo(() => simulatePlant(plant), [plant]);
 
+  const [showHelp, setShowHelp] = useState(false);
   const resetAll = () => {
     if (!window.confirm('Reset the plant back to a single feed? This clears your units and wiring. This cannot be undone.'))
       return;
     updatePlant(defaultPlant());
+  };
+  const loadExample = () => {
+    if (plant.units.length > 1 && !window.confirm('Load the example plant? This replaces your current plant.')) return;
+    updatePlant(examplePlant());
+    setName('Example plant');
+    setView('flow');
   };
 
   const saveJson = () => {
@@ -124,6 +133,29 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `${name.replace(/\s+/g, '_') || 'plant'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const exportCsv = () => {
+    const rows = [['Product', 'tph', '% of feed', 'Top size (mm)', 'P80 (mm)']];
+    plantResult.piles.forEach((p) => {
+      const g = p.stream.gradation;
+      const top = g.length ? Math.max(...g.map((x) => x.size)) : 0;
+      const p80 = g.length ? sizeAtPassing(g, 80) : 0;
+      rows.push([
+        p.product,
+        Math.round(p.stream.tph).toString(),
+        plantResult.feedTph ? ((p.stream.tph / plantResult.feedTph) * 100).toFixed(1) : '0',
+        top.toFixed(1),
+        p80.toFixed(1),
+      ]);
+    });
+    const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name.replace(/\s+/g, '_') || 'plant'}_products.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -168,6 +200,12 @@ export default function App() {
           <p className="units-legend">Sizes in mm · screen in ft · feed rate in tph</p>
         </div>
         <div className="toolbar">
+          <button className="secondary" onClick={loadExample} title="Load a worked example plant">
+            ▶ Example
+          </button>
+          <button className="secondary" onClick={() => setShowHelp(true)} title="How it works / method">
+            ⓘ How it works
+          </button>
           <button className="secondary" onClick={undo} disabled={past.current.length === 0} title="Undo">
             ↶ Undo
           </button>
@@ -188,6 +226,9 @@ export default function App() {
           </button>
           <button className="secondary" onClick={() => window.print()}>
             Export PDF
+          </button>
+          <button className="secondary" onClick={exportCsv} title="Download the product piles as CSV">
+            Products CSV
           </button>
           <button
             className="secondary danger"
@@ -221,11 +262,13 @@ export default function App() {
           <button className="intro-x" onClick={dismissIntro} aria-label="Dismiss">
             ✕
           </button>
-          <strong>New here?</strong> Build your circuit on the <em>Plant</em> tab (add screens + crushers, wire
-          them up). Everything else — the <em>Simulator</em> overview, the <em>Gradation</em> curves and the
-          <em>Flowsheet</em> — updates automatically from it.
+          <strong>New here?</strong> Try the <button className="link-inline" onClick={loadExample}>example plant</button> to
+          see it in action, or build your own on the <em>Plant</em> or <em>Flowsheet</em> tab. Everything else — the
+          <em>Simulator</em> overview and the <em>Gradation</em> curves — updates automatically from it.
         </div>
       )}
+
+      {showHelp && <HowItWorks onClose={() => setShowHelp(false)} />}
 
       <nav className="tabs">
         <button className={view === 'sim' ? 'tab active' : 'tab'} onClick={() => setView('sim')}>

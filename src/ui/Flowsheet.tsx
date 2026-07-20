@@ -273,6 +273,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   // While a box is being dragged we only move it locally (no plant edit, so no
   // re-simulation) and commit once on release — keeps dragging smooth on big plants.
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [help, setHelp] = useState(false);
   const posD = useMemo(() => {
     if (!dragPos) return pos;
     const m = new Map(pos);
@@ -285,6 +286,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     | { mode: 'connect'; id: string; port: string }
     | null
   >(null);
+  const longPress = useRef<number | undefined>(undefined);
+  const clearLongPress = () => { if (longPress.current) { clearTimeout(longPress.current); longPress.current = undefined; } };
 
   const toWorld = (clientX: number, clientY: number): Pos => {
     const svg = svgRef.current!;
@@ -299,6 +302,45 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
   };
 
   const fit = () => setView(bounds);
+  // Export the whole flowsheet as a PNG (styles inlined so class-based node/label
+  // styling survives serialization).
+  const exportPng = () => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    const b = bounds;
+    clone.setAttribute('viewBox', `${b.x} ${b.y} ${b.w} ${b.h}`);
+    clone.setAttribute('width', String(Math.round(b.w)));
+    clone.setAttribute('height', String(Math.round(b.h)));
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent =
+      '.fs-node-box{fill:#fff;stroke:#c7d0db;stroke-width:1.5px}.fs-node-box.bad{stroke:#e23a13}.fs-node-name{font:700 12px system-ui,sans-serif;fill:#0f2350}.fs-node-sub{font:10px system-ui,sans-serif;fill:#5a6a86}.fs-port{fill:#fff;stroke:#1963ff;stroke-width:2px}.fs-edge-label{font:9px system-ui,sans-serif;fill:#5a6a86;paint-order:stroke;stroke:#fff;stroke-width:3px}.fs-x{font:11px system-ui,sans-serif;fill:#d9480f}';
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', String(b.x)); bg.setAttribute('y', String(b.y));
+    bg.setAttribute('width', String(b.w)); bg.setAttribute('height', String(b.h)); bg.setAttribute('fill', '#ffffff');
+    clone.insertBefore(bg, clone.firstChild);
+    clone.insertBefore(style, clone.firstChild);
+    const xml = new XMLSerializer().serializeToString(clone);
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(b.w * scale);
+      canvas.height = Math.round(b.h * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.drawImage(img, 0, 0, b.w, b.h);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'flowsheet.png'; a.click();
+        URL.revokeObjectURL(url);
+      });
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+  };
   const zoom = (factor: number, cx?: number, cy?: number) => {
     const c = cx != null && cy != null ? toWorld(cx, cy) : { x: view.x + view.w / 2, y: view.y + view.h / 2 };
     setView((v) => ({ x: c.x - (c.x - v.x) * factor, y: c.y - (c.y - v.y) * factor, w: v.w * factor, h: v.h * factor }));
@@ -349,6 +391,16 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     drag.current = { mode: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
     setSelected(null);
     svgRef.current?.setPointerCapture(e.pointerId);
+    // Touch has no right-click: long-press the empty canvas to open the add menu.
+    if (e.pointerType === 'touch') {
+      const cx = e.clientX, cy = e.clientY;
+      clearLongPress();
+      longPress.current = window.setTimeout(() => {
+        const w = toWorld(cx, cy);
+        setMenu({ sx: cx, sy: cy, w: { x: Math.round(w.x - W / 2), y: Math.round(w.y - H / 2) } });
+        drag.current = null;
+      }, 500);
+    }
   };
   // Right-click anywhere on the canvas → menu to drop a new unit at that spot.
   const onContextMenu = (e: React.MouseEvent) => {
@@ -383,6 +435,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     const d = drag.current;
     if (!d) return;
     if (d.mode === 'pan') {
+      if (longPress.current && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 8) clearLongPress();
       const s = scale();
       setView((v) => ({ ...v, x: d.vx - (e.clientX - d.sx) * s, y: d.vy - (e.clientY - d.sy) * s }));
     } else if (d.mode === 'node') {
@@ -394,6 +447,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
     }
   };
   const onUp = (e: React.PointerEvent) => {
+    clearLongPress();
     const d = drag.current;
     drag.current = null;
     if (!d) return;
@@ -608,8 +662,23 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
         <button className="secondary fs-zoom" onClick={() => zoom(1.2)} title="Zoom out" aria-label="zoom out">−</button>
         <button className="secondary" onClick={fit} title="Fit to view">Fit</button>
         <button className="secondary" onClick={() => { onChange(clearLayout(plant)); setFitNonce((n) => n + 1); }} title="Auto-arrange">Auto-arrange</button>
-        <span className="fs-hint">Drag boxes and piles to arrange · drag a ● output onto a box, a pile (to combine outputs), or empty space (a new pile) · click a box to edit · click a link or pile then ✕ (or Delete) to remove it</span>
+        <button className="secondary" onClick={exportPng} title="Download the flowsheet as a PNG">⭳ PNG</button>
+        <button className="secondary" onClick={() => setHelp((h) => !h)} title="How to use the flowsheet" aria-expanded={help}>? Help</button>
+        <span className="fs-hint">Right-click to add · drag a ● output to wire</span>
       </div>
+
+      {help && (
+        <div className="fs-help">
+          <ul>
+            <li><strong>Add equipment</strong> — the + buttons, or right-click the canvas to drop one where you click.</li>
+            <li><strong>Wire</strong> — drag a ● output onto a box, onto a pile (to combine outputs into one stockpile), or onto empty space (makes a product pile).</li>
+            <li><strong>Edit / inspect</strong> — click a box for its settings; click a pile for its tonnage &amp; gradation.</li>
+            <li><strong>Move</strong> — drag any box or pile. <em>Fit</em> reframes, <em>Auto-arrange</em> re-lays-out.</li>
+            <li><strong>Delete</strong> — click a link or pile, then ✕ (or press Delete).</li>
+            <li>A screen's <strong>undersize</strong> port is at the bottom; oversize ports on the right.</li>
+          </ul>
+        </div>
+      )}
 
       <div className="fs-legend">
         <span className="fs-leg-item">
@@ -629,6 +698,8 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
           merged into another output
         </span>
       </div>
+
+      <p className="fs-touch-note">On touch: <strong>long-press</strong> the canvas to add equipment · drag to pan · use +/− to zoom · rotate to landscape for more room.</p>
 
       <div className="fs-body">
         <svg
@@ -776,6 +847,7 @@ export function Flowsheet({ plant, result, onChange }: { plant: Plant; result: P
                   const cy = bottom ? H : 18 + (rp.length > 1 ? (rp.indexOf(port) * (H - 30)) / (rp.length - 1) : (H - 30) / 2);
                   return (
                     <g key={port} style={{ cursor: 'crosshair' }} onPointerDown={(e) => onPortDown(e, u.id, port)}>
+                      <circle cx={cx} cy={cy} r={14} fill="transparent" />
                       <circle className="fs-port" cx={cx} cy={cy} r={5} />
                       <title>{portLabel(u, port)} {bottom ? '↓' : '→'}</title>
                     </g>

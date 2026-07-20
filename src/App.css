@@ -901,6 +901,82 @@
   color: var(--muted);
   padding: 0.2rem 0.4rem;
 }
+.link-inline {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Modal (How it works) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(8, 20, 48, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 1rem;
+  overflow-y: auto;
+}
+.modal {
+  background: var(--panel);
+  border-radius: 14px;
+  max-width: 640px;
+  width: 100%;
+  box-shadow: 0 20px 60px -12px rgba(1, 30, 106, 0.55);
+  overflow: hidden;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(100deg, var(--navy), var(--accent));
+}
+.modal-head h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.15rem;
+}
+.modal-head .link-btn {
+  color: #dbe6ff;
+}
+.modal-body {
+  padding: 1rem 1.3rem 1.4rem;
+  max-height: 74vh;
+  overflow-y: auto;
+}
+.modal-body h3 {
+  margin: 1.1rem 0 0.3rem;
+  font-size: 0.98rem;
+  color: var(--navy);
+}
+.modal-body p {
+  margin: 0.35rem 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.modal-body code {
+  background: #00000010;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.86em;
+}
+.modal-note {
+  margin-top: 1.1rem !important;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted) !important;
+  font-size: 0.82rem !important;
+}
 
 /* Print header — shown only when printing */
 .print-only {
@@ -2347,6 +2423,41 @@
   font-size: 0.76rem;
   flex: 1 1 220px;
   min-width: 0;
+}
+.fs-help {
+  margin: 0.35rem 0 0.1rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--pale);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+.fs-help ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+.fs-help em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--accent);
+}
+.fs-touch-note {
+  display: none;
+}
+@media (pointer: coarse), (max-width: 760px) {
+  .fs-touch-note {
+    display: block;
+    margin: 0.3rem 0 0;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    background: var(--pale);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
 }
 .fs-legend {
   display: flex;

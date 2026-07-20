@@ -103,6 +103,33 @@ export function defaultPlant(): Plant {
   };
 }
 
+/** A worked example: a closed-circuit crushing plant feeding a double-deck sizing
+ *  screen with three product stockpiles — so a first-time visitor sees the tool's
+ *  full range (recycle loop, multiple screens, combined products) at a glance. */
+export function examplePlant(): Plant {
+  // A coarse quarry-run feed so the primary crusher carries a real load.
+  const g: Gradation = [
+    { size: 120, percentPassing: 100 }, { size: 75, percentPassing: 82 }, { size: 50, percentPassing: 63 },
+    { size: 25, percentPassing: 41 }, { size: 12.5, percentPassing: 26 }, { size: 4.75, percentPassing: 14 },
+    { size: 0.6, percentPassing: 5 }, { size: 0.075, percentPassing: 1 },
+  ];
+  return {
+    realistic: true,
+    units: [
+      { id: 'feed', kind: 'feed', name: 'Pit feed', tph: 500, gradation: g, bulkDensity: 100, wet: false, out: one('scalp') },
+      { id: 'scalp', kind: 'screen', name: 'Scalping screen', auto: false, width: 8, length: 20, travelRate: 82, targetEfficiency: 90,
+        decks: [{ aperture: 50, openAreaPct: 68, openingShape: 'square' }], deckTargets: [one('jaw')], underTarget: one('sizer') },
+      { id: 'jaw', kind: 'crusher', name: 'Jaw crusher', auto: false, crusherType: 'jaw', css: 25, capacity: 400, out: one('scalp') },
+      { id: 'sizer', kind: 'screen', name: 'Sizing screen', auto: false, width: 8, length: 24, travelRate: 75, targetEfficiency: 90,
+        decks: [{ aperture: 19, openAreaPct: 61, openingShape: 'square' }, { aperture: 9.5, openAreaPct: 51, openingShape: 'square' }],
+        deckTargets: [one('coarse'), one('fine')], underTarget: one('sand') },
+      { id: 'coarse', kind: 'pile', name: 'Coarse aggregate' },
+      { id: 'fine', kind: 'pile', name: 'Fine aggregate' },
+      { id: 'sand', kind: 'pile', name: 'Crusher sand' },
+    ],
+  };
+}
+
 /** Coerce a stored routing value (old single-target string, or a new split) to a Split. */
 function toSplit(x: unknown): Split {
   if (typeof x === 'string') return [{ to: x, frac: 1 }];
