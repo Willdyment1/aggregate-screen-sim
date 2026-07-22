@@ -10,6 +10,7 @@ import { simulatePlant } from './engine/plant';
 import { sizeAtPassing, topSize } from './engine/gradation';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { HowItWorks } from './ui/HowItWorks';
+import { PlantLibrary } from './ui/PlantLibrary';
 import { AmrizeLogo, AmrizeMark } from './ui/AmrizeLogo';
 import './App.css';
 
@@ -115,6 +116,14 @@ export default function App() {
   const plantResult = useMemo(() => simulatePlant(plant), [plant]);
 
   const [showHelp, setShowHelp] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const loadFromLibrary = (p: Plant, plantName: string) => {
+    if (plant.units.length > 1 && !window.confirm(`Load "${plantName}"? This replaces your current plant.`)) return;
+    updatePlant(p);
+    setName(plantName);
+    setShowLibrary(false);
+    setView('flow');
+  };
   const resetAll = () => {
     if (!window.confirm('Reset the plant back to a single feed? This clears your units and wiring. This cannot be undone.'))
       return;
@@ -200,8 +209,8 @@ export default function App() {
           <p className="units-legend">Sizes in mm · screen in ft · feed rate in tph</p>
         </div>
         <div className="toolbar">
-          <button className="secondary" onClick={loadExample} title="Load a worked example plant">
-            ▶ Example
+          <button className="secondary" onClick={() => setShowLibrary(true)} title="Load a saved system or save this one">
+            ⛁ Library
           </button>
           <button className="secondary" onClick={() => setShowHelp(true)} title="How it works / method">
             ⓘ How it works
@@ -269,6 +278,7 @@ export default function App() {
       )}
 
       {showHelp && <HowItWorks onClose={() => setShowHelp(false)} />}
+      {showLibrary && <PlantLibrary plant={plant} name={name} onLoad={loadFromLibrary} onClose={() => setShowLibrary(false)} />}
 
       <nav className="tabs">
         <button className={view === 'sim' ? 'tab active' : 'tab'} onClick={() => setView('sim')}>
