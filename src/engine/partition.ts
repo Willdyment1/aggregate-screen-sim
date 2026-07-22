@@ -51,6 +51,14 @@ interface Bin {
   hi: number;
 }
 
+// A particle sieve-sized ABOVE the opening cannot pass a square hole — the one
+// exception is a thin band just above the opening, where an elongated/flaky
+// particle can present a cross-section small enough to slip through. We let that
+// band (up to SHAPE_BAND above the opening) leak, tapering to zero at its edge,
+// and hold everything coarser firmly in the oversize. This is the physical wall
+// the symmetric partition curve alone doesn't enforce.
+const SHAPE_BAND = 0.2;
+
 /** Discretise a cumulative gradation into mass bins (with the opening injected). */
 function toBins(g: Gradation, aperture: number): Bin[] {
   const pts = normalizeGradation(g);
@@ -58,6 +66,10 @@ function toBins(g: Gradation, aperture: number): Bin[] {
   const sizes = new Set<number>(pts.map((p) => p.size));
   sizes.add(aperture);
   sizes.add(aperture / 2);
+  // The edge of the shape band just above the opening — its own bin, so the thin
+  // sliver of near-aperture material that can slip through isn't lumped in with
+  // material too coarse to ever pass (see the SHAPE_BAND wall in realisticSplit).
+  sizes.add(aperture * (1 + SHAPE_BAND));
   const sorted = [...sizes].sort((a, b) => b - a);
 
   const bins: Bin[] = [];
@@ -110,8 +122,17 @@ export function realisticSplit(
 
   for (const b of bins) {
     const pOver = partitionToOversize(b.size, aperture, a);
-    const over = b.massFraction * pOver;
-    const under = b.massFraction * (1 - pOver);
+    let pUnder = 1 - pOver;
+    // Physical wall: a particle coarser than the opening can't pass a square hole.
+    // Suppress pass-through above the opening, tapering to zero at the edge of the
+    // shape band (~1.2× the opening). Below the opening the curve is untouched —
+    // that (fines carried over into the oversize) is the real, dominant misplacement.
+    if (b.size > aperture) {
+      const excess = (b.size - aperture) / aperture;
+      pUnder *= Math.max(0, 1 - excess / SHAPE_BAND);
+    }
+    const under = b.massFraction * pUnder;
+    const over = b.massFraction - under;
     if (over > 0) overBins.push({ ...b, massFraction: over });
     if (under > 0) underBins.push({ ...b, massFraction: under });
     overMass += over;

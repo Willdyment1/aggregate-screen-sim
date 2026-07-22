@@ -214,6 +214,25 @@ describe('realistic (non-ideal) screening', () => {
   it('shifts product tonnages relative to the ideal cut', () => {
     expect(real.decks[0].overflow.tph).not.toBeCloseTo(ideal.decks[0].overflow.tph, 1);
   });
+
+  it('never passes clearly-oversize material through a smaller hole', () => {
+    // A rock coarser than the opening can't pass a square hole. Feed a coarse
+    // gradation to a #4 (4.75 mm) deck at the WORST (flattest) efficiency and
+    // confirm the undersize holds essentially nothing above ~1.2× the opening.
+    const coarse = [
+      { size: 26.5, percentPassing: 100 }, { size: 19, percentPassing: 90 }, { size: 13.2, percentPassing: 64 },
+      { size: 9.5, percentPassing: 49 }, { size: 4.75, percentPassing: 28 }, { size: 2.36, percentPassing: 18 },
+      { size: 0.6, percentPassing: 9 }, { size: 0.075, percentPassing: 4 },
+    ];
+    for (const eff of [90, 45]) {
+      const { throughflow, overflow } = realisticSplit(100, coarse, 4.75, eff);
+      // Above 1.2× the opening -> zero pass-through.
+      expect(100 - percentPassing(throughflow.gradation, 5.7)).toBeLessThan(0.5);
+      expect(100 - percentPassing(throughflow.gradation, 9.5)).toBeLessThan(0.05);
+      // Mass conserved.
+      expect(throughflow.tph + overflow.tph).toBeCloseTo(100, 4);
+    }
+  });
 });
 
 describe('bed-depth limit flag', () => {
